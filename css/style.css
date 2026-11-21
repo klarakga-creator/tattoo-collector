@@ -194,7 +194,7 @@ h1, h2, h3 { font-family: var(--head); font-weight: 700; text-transform: upperca
 .sheet-head h3 { font-size: 2rem; }
 .icon-btn { border: 0; background: var(--surface-2); width: 44px; height: 44px; border-radius: 50%; font-size: 0.95rem; color: var(--text); flex: none; }
 .detail-img { border: 0; padding: 0; background: var(--black); width: 100%; border-radius: 24px; overflow: hidden; display: block; }
-.detail-img img { width: 100%; max-height: 44vh; object-fit: contain; margin: 0 auto; }
+.detail-img img { width: 100%; height: auto; max-height: 44vh; object-fit: contain; margin: 0 auto; display: block; }
 .detail-noimg { background: var(--surface-2); border-radius: 24px; padding: 32px 12px; text-align: center; color: var(--text-2); }
 .detail-name { font-size: 2.6rem; margin: 16px 0 10px; }
 .facts { margin: 16px 0 0; display: grid; gap: 8px; }
@@ -327,3 +327,10 @@ body.placing #plate { max-height: calc(100vh - 210px); max-height: calc(100dvh -
 .pain-bar { display: flex; gap: 3px; margin-top: 8px; }
 .pain-bar i { flex: 1; height: 6px; border-radius: 3px; background: var(--surface); }
 .pain-bar i.on { background: var(--coral); }
+
+/* Photos: space saved up front, soft placeholder, quick fade in (no jump, no flash). */
+img.ph { opacity: 0; transition: opacity .18s ease-out; background: var(--surface-2); }
+img.ph.in { opacity: 1; }
+.card img.ph { background: rgba(0,0,0,.18); }
+.inspo-img img.ph { display: block; width: 100%; height: auto; }
+.detail-img { min-height: 120px; }

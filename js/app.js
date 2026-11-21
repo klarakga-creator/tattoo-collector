@@ -57,6 +57,7 @@
   // Thumbnails first (they show in lists), then the full photos when the phone is idle.
   function warmAll() {
     const paths = S.tattoos.map((r) => r.image_path).concat(S.inspo.map((r) => r.image_path)).filter(Boolean);
+    decodeThumbs(paths.map((p) => thumb(p)));
     warmPhotos(paths.map((p) => S.urls[thumbOf(p)])).then(() => {
       const go = () => warmPhotos(paths.map((p) => S.urls[p]));
       if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 3000 }); else setTimeout(go, 1500);
@@ -75,9 +76,35 @@
   // Show the small copy at once, then swap in the full photo as soon as it's ready.
   function progressive(el, small, full) {
     if (!el || !full || small === full) return;
-    const pre = new Image(); pre.decoding = 'async';
-    pre.onload = () => { if (el.isConnected || el.id === 'lbImg') el.src = full; };
-    pre.src = full;
+    const pre = new Image(); pre.decoding = 'async'; pre.src = full;
+    const swap = () => { if (el.isConnected) el.src = full; };
+    (pre.decode ? pre.decode() : new Promise((r) => { pre.onload = r; })).then(swap, () => {});
+  }
+  // Remember each photo's shape so its space is saved before it loads (no jumping).
+  const DIMS_KEY = 'tc-dims-v1';
+  let DIMS = {}; try { DIMS = JSON.parse(localStorage.getItem(DIMS_KEY) || '{}'); } catch (e) { DIMS = {}; }
+  let dimsT;
+  const ratioOf = (p) => DIMS[p] || 0;
+  // <img> that fades in once ready, sitting in a box of the right shape.
+  function photoTag(path, src, alt) {
+    const r = ratioOf(path);
+    return '<img src="' + esc(src) + '" alt="' + esc(alt || '') + '" decoding="async" class="ph" data-p="' + esc(path || '') + '"' +
+      ' style="aspect-ratio:' + (r ? r.toFixed(4) : '1') + (r ? '' : ';object-fit:cover') + '">';
+  }
+  document.addEventListener('load', (e) => {
+    const t = e.target; if (!t || t.tagName !== 'IMG' || !t.classList.contains('ph')) return;
+    t.classList.add('in');
+    const p = t.dataset.p;
+    if (p && t.naturalWidth && t.naturalHeight) {
+      const r = Math.round(t.naturalWidth / t.naturalHeight * 10000) / 10000;
+      if (DIMS[p] !== r) { DIMS[p] = r; clearTimeout(dimsT); dimsT = setTimeout(() => { try { localStorage.setItem(DIMS_KEY, JSON.stringify(DIMS)); } catch (x) { /* ignore */ } }, 300); }
+    }
+  }, true);
+  // Images already in memory may finish before the listener sees them.
+  function markLoaded(root) { $$('img.ph', root).forEach((i) => { if (i.complete && i.naturalWidth) i.classList.add('in'); }); }
+  const decoded = new Map(); // keeps small photos decoded in memory so lists draw instantly
+  function decodeThumbs(urls) {
+    urls.forEach((u) => { if (!u || decoded.has(u)) return; const i = new Image(); i.decoding = 'async'; i.src = u; decoded.set(u, i); if (i.decode) i.decode().catch(() => {}); });
   }
   const CACHE_KEY = 'tc-cache-v1';
   function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; } }
@@ -501,13 +528,14 @@
       const u = thumb(t.image_path), planned = t.status === 'planned';
       return '<button class="card tone-' + tones[k % tones.length] + '" data-open="' + esc(t.id) + '">' +
         '<span class="card-top">' +
-        (u ? '<img src="' + esc(u) + '" alt="" decoding="async">' : '<span class="noimg">' + esc((t.name || '?').charAt(0).toUpperCase()) + '</span>') +
+        (u ? '<img src="' + esc(u) + '" alt="" decoding="async" class="ph" data-p="' + esc(t.image_path) + '">' : '<span class="noimg">' + esc((t.name || '?').charAt(0).toUpperCase()) + '</span>') +
         '<span class="card-name">' + esc(t.name || 'Untitled') + '</span>' +
         '<span class="arrow" aria-hidden="true">↗</span></span>' +
         '<span class="card-tags"><span class="tag-pill"><i class="dot ' + (planned ? 'planned' : 'have') + '"></i>' + (planned ? 'Planned' : 'Inked') + '</span>' +
         (t.part ? '<span class="tag-pill">' + esc(t.part) + '</span>' : '') +
         '<span class="tag-pill">' + VIEWS[t.view].label + '</span></span></button>';
     }).join('');
+    markLoaded($('#list'));
     $$('#list [data-open]').forEach((b) => b.addEventListener('click', () => {
       const t = S.tattoos.find((x) => x.id === b.dataset.open);
       setView(t.view);
@@ -539,14 +567,14 @@
     openSheet(
       '<div class="sheet-head"><span class="tag-pill"><i class="dot ' + (t.status === 'planned' ? 'planned' : 'have') + '"></i>' + (t.status === 'planned' ? 'Planned' : 'Inked') + '</span>' +
       '<button class="icon-btn" data-close aria-label="Close">✕</button></div>' +
-      (u ? '<button class="detail-img" id="dImg" aria-label="Show full photo"><img src="' + esc(sm) + '" alt="' + esc(t.name) + '" decoding="async"></button>' : '<div class="detail-noimg">No photo yet. Edit to add one.</div>') +
+      (u ? '<button class="detail-img" id="dImg" aria-label="Show full photo">' + photoTag(t.image_path, sm, t.name) + '</button>' : '<div class="detail-noimg">No photo yet. Edit to add one.</div>') +
       '<h3 class="detail-name">' + esc(t.name || 'Untitled') + '</h3>' +
       '<div class="card-tags"><span class="tag-pill">' + esc(t.part || 'No body part set') + '</span><span class="tag-pill">' + VIEWS[t.view].label + ' view</span></div>' +
       (facts.length ? '<dl class="facts">' + facts.map((f) => '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + (f[0] === 'Pain' ? painBar(t.pain) : '') + '</dd></div>').join('') + '</dl>' : '') +
       '<button class="link-btn" id="dIdeas">' + (ideas ? ideas + ' inspiration ' + (ideas === 1 ? 'idea' : 'ideas') : 'Inspiration') + ' for ' + regionLabel(reg).toLowerCase() + ' →</button>' +
       '<div class="form-actions"><button class="btn danger" id="dDel">Delete</button><span class="grow"></span><button class="btn" id="dMove">Move pin</button><button class="btn primary" id="dEdit">Edit</button></div>'
     );
-    if (u) { progressive($('#dImg img'), sm, u); $('#dImg').addEventListener('click', () => lightbox(u, $('#dImg img').src)); }
+    if (u) { markLoaded($('#dImg')); progressive($('#dImg img'), sm, u); $('#dImg').addEventListener('click', () => lightbox(u, $('#dImg img').src)); }
     $('#dIdeas').addEventListener('click', () => { closeSheet(); S.region = reg; location.hash = '#inspiration'; renderInspo(); });
     $('#dEdit').addEventListener('click', () => openTattooForm(Object.assign({}, t)));
     $('#dMove').addEventListener('click', () => startPlacing(Object.assign({}, t), true));
@@ -699,12 +727,13 @@
       const u = thumb(i.image_path);
       let host = ''; try { host = i.link ? new URL(i.link).hostname.replace(/^www\./, '') : ''; } catch (e) { host = ''; }
       return '<article class="inspo-card">' +
-        (u ? '<button class="inspo-img" data-lb="' + esc(i.id) + '" aria-label="Show full image"><img src="' + esc(u) + '" alt="" decoding="async"></button>' : '') +
+        (u ? '<button class="inspo-img" data-lb="' + esc(i.id) + '" aria-label="Show full image">' + photoTag(i.image_path, u, '') + '</button>' : '') +
         '<div class="inspo-body"><span class="tag">' + esc(regionLabel(i.region)) + '</span>' +
         (i.note ? '<p>' + esc(i.note) + '</p>' : '') +
         (host ? '<a href="' + esc(i.link) + '" target="_blank" rel="noopener">' + esc(host) + ' ↗</a>' : '') +
         '<button class="mini" data-edit="' + esc(i.id) + '">Edit</button></div></article>';
     }).join('');
+    markLoaded($('#inspoGrid'));
     $$('#inspoGrid [data-lb]').forEach((b) => b.addEventListener('click', () => { const p = S.inspo.find((x) => x.id === b.dataset.lb).image_path; lightbox(img(p), thumb(p)); }));
     $$('#inspoGrid [data-edit]').forEach((b) => b.addEventListener('click', () => openInspoForm(Object.assign({}, S.inspo.find((x) => x.id === b.dataset.edit)))));
   }
@@ -840,6 +869,14 @@
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
+    // When an update arrives, switch to it straight away if nothing is open, otherwise next time the app is put away.
+    const hadSW = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadSW) return;
+      const idle = () => $('#sheetWrap').hidden && !S.placing && !document.querySelector('.crop-wrap');
+      if (idle()) location.reload();
+      else document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') location.reload(); });
+    });
   }
   boot();
   // Re-fit plate labels once the display font has loaded.
