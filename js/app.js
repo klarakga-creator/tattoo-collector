@@ -339,6 +339,111 @@
   // ---------- plate ----------
   const visible = () => S.tattoos.filter((t) => S.filter === 'all' || t.status === S.filter);
 
+  // ---------- mind-map labels ----------
+  // Names float in the free space around the body instead of sitting in two columns.
+  const MINDMAP = true;
+  const freeCache = {};
+  // Where the body is, as a coarse grid in plate coordinates (cached per view and size).
+  function bodyGrid(geo, view) {
+    const key = view + ':' + geo.W + ':' + geo.H;
+    if (freeCache[key]) return freeCache[key];
+    const step = 6, cols = Math.ceil(geo.W / step), rows = Math.ceil(geo.H / step);
+    const c = document.createElement('canvas'); c.width = cols; c.height = rows;
+    const ctx = c.getContext('2d');
+    ctx.setTransform(geo.sc / step, 0, 0, geo.sc / step, geo.figX / step, geo.figY / step);
+    if (view === 'left') { ctx.translate(F.FIG_W, 0); ctx.scale(-1, 1); }
+    ctx.fillStyle = '#000';
+    F.clipPaths(view).forEach((d) => { try { ctx.fill(new Path2D(d)); } catch (e) { /* ignore */ } });
+    const px = ctx.getImageData(0, 0, cols, rows).data, on = new Uint8Array(cols * rows);
+    for (let i = 0; i < on.length; i++) on[i] = px[i * 4 + 3] > 40 ? 1 : 0;
+    return (freeCache[key] = { step, cols, rows, on });
+  }
+  // Is anything of the body within `pad` of this rectangle?
+  function hitsBody(g, x1, y1, x2, y2, pad) {
+    const s = g.step, c1 = Math.max(0, Math.floor((x1 - pad) / s)), c2 = Math.min(g.cols - 1, Math.floor((x2 + pad) / s));
+    const r1 = Math.max(0, Math.floor((y1 - pad) / s)), r2 = Math.min(g.rows - 1, Math.floor((y2 + pad) / s));
+    for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) if (g.on[r * g.cols + c]) return true;
+    return false;
+  }
+  // Does the straight line from a to b pass through box [x1, y1, x2, y2]?
+  function lineHitsBox(a, b, box) {
+    for (let i = 1; i < 24; i++) {
+      const t = i / 24, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+      if (x > box[0] && x < box[2] && y > box[1] && y < box[3]) return true;
+    }
+    return false;
+  }
+  function segsCross(a, b, c, d) {
+    const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+    return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+  }
+  // Candidate spots for a name, each knowing how wide a name can be there without touching the body.
+  function freeSpots(geo, view) {
+    const g = bodyGrid(geo, view);
+    if (g.spots) return g.spots;
+    const R = 11, out = [];
+    for (let y = 26; y < geo.H - 60; y += 14) for (let x = 24; x < geo.W - 24; x += 14) {
+      if (hitsBody(g, x - R, y - R, x + R, y + R, 20)) continue;
+      // how far left and right the name band (under the dot) is free
+      let half = 0;
+      while (half < 120 && x - half - 8 > 8 && x + half + 8 < geo.W - 8 && !hitsBody(g, x - half - 8, y + R + 4, x + half + 8, y + R + 36, 12)) half += 8;
+      if (half >= 30) out.push({ x, y, half });
+    }
+    return (g.spots = out);
+  }
+  let mmCache = { key: '', pos: null };
+  function mindmapLayout(items, geo) {
+    if (S.placing) return; // names are hidden while placing a pin
+    const key = S.view + '|' + geo.W + '|' + items.map((it) => it.t.id + ':' + it.px.toFixed(0) + ',' + it.py.toFixed(0) + ':' + (it.t.name || '')).join(';');
+    if (mmCache.key === key) { items.forEach((it) => Object.assign(it, mmCache.pos[it.t.id] || {})); finishColumns(items, geo); return; }
+    const W = geo.W, R = 11, cand = freeSpots(geo, S.view);
+    const pinsAll = items.flatMap((it) => it.spots.map((q) => ({ x: q.px, y: q.py })));
+    const placed = [], pos = {};
+    items.slice().sort((a, b) => a.py - b.py).forEach((it) => {
+      const name = it.t.name || 'Untitled';
+      const tw = Math.min(220, name.length * 14.5 + 10);
+      const P = { x: it.px, y: it.py };
+      let best = null, bestScore = Infinity;
+      for (const c of cand) {
+        if (c.half * 2 < tw) continue; // the whole name must fit, clear of the body
+        const w = tw;
+        const d = Math.hypot(c.x - P.x, c.y - P.y);
+        if (d < 80) continue;
+        const box = [c.x - w / 2, c.y - R - 4, c.x + w / 2, c.y + R + 34];
+        let score = Math.abs(d - 130) * 1.2 + (d > 240 ? (d - 240) * 3 : 0), bad = false;
+        for (const o of placed) {
+          if (!(box[2] + 16 < o.box[0] || box[0] - 16 > o.box[2] || box[3] + 14 < o.box[1] || box[1] - 14 > o.box[3])) { bad = true; break; }
+          const dd = Math.hypot(c.x - o.x, c.y - o.y);
+          if (dd < 150) score += (150 - dd) * 2.5; // breathing room between names
+          if (segsCross(c, P, o.seg[0], o.seg[1])) score += 260; // avoid crossing lines
+        }
+        if (bad) continue;
+        for (const q of pinsAll) if ((q.x !== P.x || q.y !== P.y) && Math.hypot(c.x - q.x, c.y - q.y) < 34) score += 300;
+        if ((c.x - W / 2) * (P.x - W / 2) < 0) score += 120; // stay on the tattoo's own side
+        // Never let a name's own line run down through its text.
+        const txt = [c.x - tw / 2 - 4, c.y + R + 6, c.x + tw / 2 + 4, c.y + R + 32];
+        if (lineHitsBox(c, P, txt)) score += 900;
+        for (const o of placed) {
+          if (lineHitsBox(c, P, o.txt)) score += 700; // my line through their name
+          if (lineHitsBox(o.seg[0], o.seg[1], txt)) score += 700; // their line through my name
+        }
+        if (score < bestScore) { bestScore = score; best = { c, box, w }; }
+      }
+      if (!best) { pos[it.t.id] = { mx: null }; return; }
+      pos[it.t.id] = { mx: best.c.x, my: best.c.y, mw: best.w, tw };
+      placed.push({ x: best.c.x, y: best.c.y, box: best.box, seg: [best.c, P], txt: [best.c.x - tw / 2 - 4, best.c.y + R + 6, best.c.x + tw / 2 + 4, best.c.y + R + 32] });
+    });
+    mmCache = { key, pos };
+    items.forEach((it) => Object.assign(it, pos[it.t.id] || {}));
+    finishColumns(items, geo);
+  }
+  // Anything that found no room falls back to the side columns.
+  function finishColumns(items, geo) {
+    const left = items.filter((i) => i.mx == null && i.t.x < 0.5), right = items.filter((i) => i.mx == null && i.t.x >= 0.5);
+    [left, right].forEach((col) => col.forEach((i) => { i.target = i.py; }));
+    layoutColumn(left, 30, geo.H - 50, 64); layoutColumn(right, 30, geo.H - 50, 64);
+  }
+
   function layoutColumn(items, top, bottom, gap) {
     items.sort((a, b) => a.py - b.py);
     const n = items.length; if (!n) return;
@@ -367,14 +472,16 @@
     const L = items.filter((i) => i.t.x < 0.5), R = items.filter((i) => i.t.x >= 0.5);
     [L, R].forEach((col) => col.forEach((i) => { i.target = narrow ? i.py - 26 : i.py; }));
     // A dot with the tattoo's name: compact, so labels don't crowd each other.
-    if (narrow) { layoutColumn(L, 30, H - 50, 64); layoutColumn(R, 30, H - 50, 64); }
+    if (MINDMAP) mindmapLayout(items, S.geo);
+    else if (narrow) { layoutColumn(L, 30, H - 50, 64); layoutColumn(R, 30, H - 50, 64); }
     else { layoutColumn(L, 30, H - 30, 46); layoutColumn(R, 30, H - 30, 46); }
 
     let lines = '', labels = '', pins = '';
     const place = (it, leftCol) => {
       const t = it.t, sel = S.selected === t.id, planned = t.status === 'planned';
-      const cy = it.ly;
-      const cx = narrow ? (leftCol ? figX / 2 + 2 : W - figX / 2 - 2) : (leftCol ? figX - 40 : figX + fw + 40);
+      const mm = MINDMAP && it.mx != null;
+      const cy = mm ? it.my : it.ly;
+      const cx = mm ? it.mx : narrow ? (leftCol ? figX / 2 + 2 : W - figX / 2 - 2) : (leftCol ? figX - 40 : figX + fw + 40);
       const ang = Math.atan2(it.py - cy, it.px - cx);
       const ex = cx + Math.cos(ang) * (r + 5), ey = cy + Math.sin(ang) * (r + 5);
       const cls = (planned ? 'planned' : 'have') + (sel ? ' sel' : '');
@@ -383,8 +490,10 @@
       if (it.spots.length === 1) draw(segOf(it.spots[0].px, it.spots[0].py, ex, ey));
       else {
         // One line leaves the name, then splits into a branch for each spot.
-        const dir = leftCol ? 1 : -1, jx = cx + dir * 46, jy = cy;
-        draw(segOf(cx + dir * (r + 5), cy, jx, jy));
+        // The split point sits a little way from the name, towards the spots.
+        const ux = Math.cos(ang), uy = Math.sin(ang);
+        const jx = mm ? cx + ux * 48 : cx + (leftCol ? 1 : -1) * 46, jy = mm ? cy + uy * 48 : cy;
+        draw(segOf(mm ? ex : cx + (leftCol ? 1 : -1) * (r + 5), mm ? ey : cy, jx, jy));
         it.spots.forEach((q) => draw(segOf(jx, jy, q.px, q.py)));
         lines += '<circle class="lead-joint ' + cls + '" cx="' + jx.toFixed(1) + '" cy="' + jy.toFixed(1) + '" r="4"/>';
       }
@@ -394,7 +503,12 @@
       });
       const name = esc((t.name || 'Untitled').toUpperCase());
       let text, hx, hy, hw, hh;
-      if (narrow) {
+      if (mm) {
+        // Name under the dot, centred, like a node in a mind map.
+        const mw = (it.mw || 180) + 12;
+        text = '<text class="lb-name fit" data-max="' + mw + '" x="' + cx.toFixed(1) + '" y="' + (cy + r + 28).toFixed(1) + '" text-anchor="middle">' + name + '</text>';
+        hw = Math.max(60, Math.min(mw, it.tw || mw)) + 16; hx = cx - hw / 2; hy = cy - r - 8; hh = 2 * r + 46;
+      } else if (narrow) {
         text = '<text class="lb-name fit" data-max="' + (figX - 10) + '" x="' + cx + '" y="' + (cy + r + 28) + '" text-anchor="middle">' + name + '</text>';
         hw = figX - 4; hx = cx - hw / 2; hy = cy - r - (BIG_NAME_TARGETS ? 4 : 8); hh = BIG_NAME_TARGETS ? 62 : 2 * r + 46;
       } else {
