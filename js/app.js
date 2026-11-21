@@ -36,6 +36,49 @@
   const img = (p) => (p && S.urls[p]) || '';
   const thumbOf = (p) => (p ? p.replace(/\.[a-z]+$/i, '') + '.thumb.jpg' : p);
   const thumb = (p) => (p && (S.urls[thumbOf(p)] || S.urls[p])) || '';
+  // Photos are kept on the device after the first view, so they open instantly next time.
+  // Each photo has its own path and is never changed in place, so a cached copy is always right.
+  const PHOTO_CACHE = 'tc-photos-v1';
+  const photoKey = (u) => { try { const x = new URL(u); return x.origin + x.pathname; } catch (e) { return u; } };
+  const warmed = new Set();
+  async function warmPhotos(urls) {
+    if (!('caches' in window) || S.store.demo) return;
+    let c; try { c = await caches.open(PHOTO_CACHE); } catch (e) { return; }
+    const todo = urls.filter((u) => u && /^https:/.test(u) && !warmed.has(photoKey(u)));
+    let i = 0;
+    const worker = async () => {
+      while (i < todo.length) {
+        const u = todo[i++], k = photoKey(u); warmed.add(k);
+        try { if (!(await c.match(k))) { const r = await fetch(u, { mode: 'cors', credentials: 'omit' }); if (r.ok) await c.put(k, r); } } catch (e) { warmed.delete(k); }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+  }
+  // Thumbnails first (they show in lists), then the full photos when the phone is idle.
+  function warmAll() {
+    const paths = S.tattoos.map((r) => r.image_path).concat(S.inspo.map((r) => r.image_path)).filter(Boolean);
+    warmPhotos(paths.map((p) => S.urls[thumbOf(p)])).then(() => {
+      const go = () => warmPhotos(paths.map((p) => S.urls[p]));
+      if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 3000 }); else setTimeout(go, 1500);
+    });
+  }
+  // Drop photos that no longer belong to any tattoo or idea.
+  async function prunePhotos() {
+    if (!('caches' in window) || S.store.demo) return;
+    try {
+      const c = await caches.open(PHOTO_CACHE), keep = new Set();
+      S.tattoos.concat(S.inspo).forEach((r) => { if (r.image_path) [r.image_path, thumbOf(r.image_path)].forEach((p) => { if (S.urls[p]) keep.add(photoKey(S.urls[p])); }); });
+      if (!keep.size) return;
+      (await c.keys()).forEach((req) => { if (!keep.has(photoKey(req.url))) c.delete(req); });
+    } catch (e) { /* ignore */ }
+  }
+  // Show the small copy at once, then swap in the full photo as soon as it's ready.
+  function progressive(el, small, full) {
+    if (!el || !full || small === full) return;
+    const pre = new Image(); pre.decoding = 'async';
+    pre.onload = () => { if (el.isConnected || el.id === 'lbImg') el.src = full; };
+    pre.src = full;
+  }
   const CACHE_KEY = 'tc-cache-v1';
   function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; } }
   function writeCache() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: S.tattoos, i: S.inspo, at: Date.now() })); } catch (e) { /* storage full or blocked */ } }
@@ -63,7 +106,7 @@
       S.tattoos = c.t; S.inspo = c.i || [];
       const paths = S.tattoos.map((r) => r.image_path).concat(S.inspo.map((r) => r.image_path)).filter(Boolean);
       Object.assign(S.urls, S.store.cachedUrls ? S.store.cachedUrls(paths.concat(paths.map(thumbOf))) : {});
-      S.loaded = true; renderAll();
+      S.loaded = true; renderAll(); warmAll();
     }
     S.store.start();
     refresh();
@@ -95,7 +138,7 @@
       const paths = t.map((r) => r.image_path).concat(i.map((r) => r.image_path)).filter(Boolean);
       Object.assign(S.urls, await S.store.urls(paths.concat(paths.map(thumbOf))));
       S.loaded = true; $('#offline').hidden = true;
-      if (!S.store.demo) writeCache();
+      if (!S.store.demo) { writeCache(); warmAll(); clearTimeout(S.pruneT); S.pruneT = setTimeout(prunePhotos, 8000); }
       if (!S.placing) renderAll(); else { renderCounts(); renderList(); renderInspo(); }
     } catch (ex) {
       console.warn(ex);
@@ -458,7 +501,7 @@
       const u = thumb(t.image_path), planned = t.status === 'planned';
       return '<button class="card tone-' + tones[k % tones.length] + '" data-open="' + esc(t.id) + '">' +
         '<span class="card-top">' +
-        (u ? '<img src="' + esc(u) + '" alt="" loading="lazy">' : '<span class="noimg">' + esc((t.name || '?').charAt(0).toUpperCase()) + '</span>') +
+        (u ? '<img src="' + esc(u) + '" alt="" decoding="async">' : '<span class="noimg">' + esc((t.name || '?').charAt(0).toUpperCase()) + '</span>') +
         '<span class="card-name">' + esc(t.name || 'Untitled') + '</span>' +
         '<span class="arrow" aria-hidden="true">↗</span></span>' +
         '<span class="card-tags"><span class="tag-pill"><i class="dot ' + (planned ? 'planned' : 'have') + '"></i>' + (planned ? 'Planned' : 'Inked') + '</span>' +
@@ -490,20 +533,20 @@
   function openDetail(id) {
     const t = S.tattoos.find((x) => x.id === id); if (!t) return;
     S.selected = id; renderPlate();
-    const u = img(t.image_path), reg = regionOf(t.part), ideas = S.inspo.filter((i) => i.region === reg).length;
+    const u = img(t.image_path), sm = thumb(t.image_path) || u, reg = regionOf(t.part), ideas = S.inspo.filter((i) => i.region === reg).length;
     const pain = t.status !== 'planned' && t.pain ? t.pain + ' / 10' : '';
     const facts = [['Artist', t.artist], ['Studio', t.studio], ['Price', t.status !== 'planned' ? t.price : ''], ['Pain', pain], [t.status === 'planned' ? 'Target date' : 'Date', fmtDate(t.date)], ['Notes', t.notes]].filter((f) => f[1]);
     openSheet(
       '<div class="sheet-head"><span class="tag-pill"><i class="dot ' + (t.status === 'planned' ? 'planned' : 'have') + '"></i>' + (t.status === 'planned' ? 'Planned' : 'Inked') + '</span>' +
       '<button class="icon-btn" data-close aria-label="Close">✕</button></div>' +
-      (u ? '<button class="detail-img" id="dImg" aria-label="Show full photo"><img src="' + esc(u) + '" alt="' + esc(t.name) + '"></button>' : '<div class="detail-noimg">No photo yet. Edit to add one.</div>') +
+      (u ? '<button class="detail-img" id="dImg" aria-label="Show full photo"><img src="' + esc(sm) + '" alt="' + esc(t.name) + '" decoding="async"></button>' : '<div class="detail-noimg">No photo yet. Edit to add one.</div>') +
       '<h3 class="detail-name">' + esc(t.name || 'Untitled') + '</h3>' +
       '<div class="card-tags"><span class="tag-pill">' + esc(t.part || 'No body part set') + '</span><span class="tag-pill">' + VIEWS[t.view].label + ' view</span></div>' +
       (facts.length ? '<dl class="facts">' + facts.map((f) => '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + (f[0] === 'Pain' ? painBar(t.pain) : '') + '</dd></div>').join('') + '</dl>' : '') +
       '<button class="link-btn" id="dIdeas">' + (ideas ? ideas + ' inspiration ' + (ideas === 1 ? 'idea' : 'ideas') : 'Inspiration') + ' for ' + regionLabel(reg).toLowerCase() + ' →</button>' +
       '<div class="form-actions"><button class="btn danger" id="dDel">Delete</button><span class="grow"></span><button class="btn" id="dMove">Move pin</button><button class="btn primary" id="dEdit">Edit</button></div>'
     );
-    if (u) $('#dImg').addEventListener('click', () => lightbox(u));
+    if (u) { progressive($('#dImg img'), sm, u); $('#dImg').addEventListener('click', () => lightbox(u, $('#dImg img').src)); }
     $('#dIdeas').addEventListener('click', () => { closeSheet(); S.region = reg; location.hash = '#inspiration'; renderInspo(); });
     $('#dEdit').addEventListener('click', () => openTattooForm(Object.assign({}, t)));
     $('#dMove').addEventListener('click', () => startPlacing(Object.assign({}, t), true));
@@ -525,7 +568,7 @@
     });
   }
 
-  function lightbox(u) { $('#lbImg').src = u; $('#lightbox').hidden = false; }
+  function lightbox(u, small) { const el = $('#lbImg'); el.src = small || u; $('#lightbox').hidden = false; progressive(el, small, u); }
 
   // ---------- image prep ----------
   async function prepareImage(file) {
@@ -653,16 +696,16 @@
       return;
     }
     $('#inspoGrid').innerHTML = items.map((i) => {
-      const u = img(i.image_path);
+      const u = thumb(i.image_path);
       let host = ''; try { host = i.link ? new URL(i.link).hostname.replace(/^www\./, '') : ''; } catch (e) { host = ''; }
       return '<article class="inspo-card">' +
-        (u ? '<button class="inspo-img" data-lb="' + esc(i.id) + '" aria-label="Show full image"><img src="' + esc(u) + '" alt="" loading="lazy"></button>' : '') +
+        (u ? '<button class="inspo-img" data-lb="' + esc(i.id) + '" aria-label="Show full image"><img src="' + esc(u) + '" alt="" decoding="async"></button>' : '') +
         '<div class="inspo-body"><span class="tag">' + esc(regionLabel(i.region)) + '</span>' +
         (i.note ? '<p>' + esc(i.note) + '</p>' : '') +
         (host ? '<a href="' + esc(i.link) + '" target="_blank" rel="noopener">' + esc(host) + ' ↗</a>' : '') +
         '<button class="mini" data-edit="' + esc(i.id) + '">Edit</button></div></article>';
     }).join('');
-    $$('#inspoGrid [data-lb]').forEach((b) => b.addEventListener('click', () => lightbox(img(S.inspo.find((x) => x.id === b.dataset.lb).image_path))));
+    $$('#inspoGrid [data-lb]').forEach((b) => b.addEventListener('click', () => { const p = S.inspo.find((x) => x.id === b.dataset.lb).image_path; lightbox(img(p), thumb(p)); }));
     $$('#inspoGrid [data-edit]').forEach((b) => b.addEventListener('click', () => openInspoForm(Object.assign({}, S.inspo.find((x) => x.id === b.dataset.edit)))));
   }
 
@@ -741,7 +784,7 @@
   async function makeThumb(blob) {
     try {
       const b = await createImageBitmap(blob);
-      const s = Math.min(1, 480 / Math.max(b.width, b.height));
+      const s = Math.min(1, 720 / Math.max(b.width, b.height));
       const c = document.createElement('canvas'); c.width = Math.round(b.width * s); c.height = Math.round(b.height * s);
       c.getContext('2d').drawImage(b, 0, 0, c.width, c.height);
       return await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.82));
