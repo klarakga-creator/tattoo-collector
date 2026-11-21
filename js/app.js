@@ -141,6 +141,16 @@
     $('#signOut').addEventListener('click', async () => { try { localStorage.removeItem(CACHE_KEY); } catch (e) { /* ignore */ } await S.store.signOut(); location.reload(); });
     $('#sheetWrap').addEventListener('click', (e) => { if (e.target.matches('.scrim') || e.target.closest('[data-close]')) closeSheet(); });
     $('#lightbox').addEventListener('click', () => { $('#lightbox').hidden = true; });
+    // Swipe down to close the sheets and the photo viewer.
+    const sheetEl = $('#sheetBody').closest('.sheet') || $('#sheetBody');
+    window.SwipeClose.attach(sheetEl, {
+      fade: $('#sheetWrap .scrim'),
+      atTop: () => sheetEl.scrollTop <= 0,
+      // Leave sliders and scrolled text boxes alone.
+      canStart: (e) => { const t = e.target; if (t.closest('input[type=range]')) return false; const ta = t.closest('textarea'); return !(ta && ta.scrollTop > 0); },
+      onClose: () => closeSheet()
+    });
+    window.SwipeClose.attach($('#lightbox'), { move: $('#lbImg'), fade: $('#lightbox'), onClose: () => { $('#lightbox').hidden = true; } });
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (!$('#lightbox').hidden) $('#lightbox').hidden = true;

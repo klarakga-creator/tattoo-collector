@@ -40,6 +40,8 @@
 
       const img = wrap.querySelector('img'), frame = wrap.querySelector('.crop-frame'), stage = wrap.querySelector('.crop-stage');
       const range = wrap.querySelector('input[type=range]');
+      // Swipe down on the title bar to cancel (the photo area itself is for moving the photo).
+      if (window.SwipeClose) window.SwipeClose.attach(wrap.querySelector('.crop-top'), { move: wrap, onClose: () => finish(null) });
       const st = { z: 1, tx: 0, ty: 0, rot: 0, ratio: 1 };
       let fw = 1, fh = 1, iw = 1, ih = 1;
 
