@@ -124,6 +124,7 @@
         { id: id(), name: 'Crescent moon', status: 'have', view: 'back', x: 0.5, y: 0.158, part: 'Nape', artist: '', date: '2021-09-02', notes: 'Example entry.', image_path: 'demo/moon', created_at: now() },
         { id: id(), name: 'Amor fati', status: 'have', view: 'front', x: 0.37, y: 0.355, part: 'Right ribs', artist: '', date: '', notes: 'Example entry.', image_path: 'demo/script', created_at: now() },
         { id: id(), name: 'Wave band', status: 'planned', view: 'right', x: 0.51, y: 0.912, part: 'Right ankle', artist: '', date: '', notes: 'Example of a planned piece.', image_path: 'demo/wave', created_at: now() },
+        { id: id(), name: 'Twin swallows', status: 'have', view: 'back', x: 0.36, y: 0.2, extra: [{ x: 0.64, y: 0.2 }], part: 'Both shoulders', artist: '', date: '', notes: 'Example of one tattoo in two places.', image_path: null, created_at: now() },
         { id: id(), name: 'Botanical sleeve', status: 'planned', view: 'back', x: 0.24, y: 0.36, part: 'Left upper arm', artist: '', date: '', notes: 'Example of a planned piece without a photo.', image_path: null, created_at: now() }
       ],
       inspirations: [

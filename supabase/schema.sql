@@ -14,6 +14,7 @@ create table if not exists public.tattoos (
   studio text not null default '',
   price text not null default '',
   pain smallint check (pain between 1 and 10),
+  extra jsonb,
   date date,
   notes text not null default '',
   image_path text,
@@ -27,6 +28,9 @@ alter table public.tattoos add column if not exists studio text not null default
 -- Added later: price and pain scale for tattoos you have (safe to run again).
 alter table public.tattoos add column if not exists price text not null default '';
 alter table public.tattoos add column if not exists pain smallint check (pain between 1 and 10);
+
+-- Added later: extra spots for one tattoo in several places (safe to run again).
+alter table public.tattoos add column if not exists extra jsonb;
 
 create table if not exists public.inspirations (
   id uuid primary key default gen_random_uuid(),

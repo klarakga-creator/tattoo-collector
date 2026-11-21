@@ -214,6 +214,8 @@
       if (!p.direct) openTattooForm(p.draft); else openDetail(p.draft.id);
     });
     $('#placeDone').addEventListener('click', finishPlacing);
+    $('#addSpot').addEventListener('click', addSpot);
+    $('#delSpot').addEventListener('click', removeSpot);
     $$('.zoom-ctl button').forEach((b) => b.addEventListener('click', (e) => {
       e.stopPropagation();
       const z = b.dataset.z;
@@ -355,7 +357,10 @@
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
 
     const r = 11; // label dot
-    const items = visible().filter((t) => t.view === S.view).map((t) => ({ t, px: figX + t.x * fw, py: figY + t.y * F.FIG_H * sc }));
+    const items = visible().filter((t) => t.view === S.view).map((t) => {
+      const spots = spotsOf(t).map((q) => ({ px: figX + q.x * fw, py: figY + q.y * F.FIG_H * sc }));
+      return { t, spots, px: spots.reduce((a, q) => a + q.px, 0) / spots.length, py: spots.reduce((a, q) => a + q.py, 0) / spots.length };
+    });
     const L = items.filter((i) => i.t.x < 0.5), R = items.filter((i) => i.t.x >= 0.5);
     [L, R].forEach((col) => col.forEach((i) => { i.target = narrow ? i.py - 26 : i.py; }));
     // A dot with the tattoo's name: compact, so labels don't crowd each other.
@@ -370,10 +375,20 @@
       const ang = Math.atan2(it.py - cy, it.px - cx);
       const ex = cx + Math.cos(ang) * (r + 5), ey = cy + Math.sin(ang) * (r + 5);
       const cls = (planned ? 'planned' : 'have') + (sel ? ' sel' : '');
-      const seg = 'x1="' + it.px.toFixed(1) + '" y1="' + it.py.toFixed(1) + '" x2="' + ex.toFixed(1) + '" y2="' + ey.toFixed(1) + '"';
-      lines += '<line class="lead ' + cls + '" ' + seg + '/><line class="lead-in ' + cls + '" clip-path="url(#onBody)" ' + seg + '/>';
-      pins += '<g class="pin ' + cls + '" data-id="' + esc(t.id) + '"><circle class="hitarea" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="20"/>' +
-        '<circle class="dot" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="' + (sel ? 11 : 8.5) + '"/></g>';
+      const segOf = (x1, y1, x2, y2) => 'x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '"';
+      const draw = (seg) => { lines += '<line class="lead ' + cls + '" ' + seg + '/><line class="lead-in ' + cls + '" clip-path="url(#onBody)" ' + seg + '/>'; };
+      if (it.spots.length === 1) draw(segOf(it.spots[0].px, it.spots[0].py, ex, ey));
+      else {
+        // One line leaves the name, then splits into a branch for each spot.
+        const dir = leftCol ? 1 : -1, jx = cx + dir * 46, jy = cy;
+        draw(segOf(cx + dir * (r + 5), cy, jx, jy));
+        it.spots.forEach((q) => draw(segOf(jx, jy, q.px, q.py)));
+        lines += '<circle class="lead-joint ' + cls + '" cx="' + jx.toFixed(1) + '" cy="' + jy.toFixed(1) + '" r="4"/>';
+      }
+      it.spots.forEach((q) => {
+        pins += '<g class="pin ' + cls + '" data-id="' + esc(t.id) + '"><circle class="hitarea" cx="' + q.px.toFixed(1) + '" cy="' + q.py.toFixed(1) + '" r="20"/>' +
+          '<circle class="dot" cx="' + q.px.toFixed(1) + '" cy="' + q.py.toFixed(1) + '" r="' + (sel ? 11 : 8.5) + '"/></g>';
+      });
       const name = esc((t.name || 'Untitled').toUpperCase());
       let text, hx, hy, hw, hh;
       if (narrow) {
@@ -396,12 +411,17 @@
     if (S.placing) {
       lines = ''; labels = '';
       pins = pins.replace(/class="pin /g, 'class="pin faded ');
-      if (S.placing.direct) pins = pins.replace(new RegExp('<g class="pin faded [^"]*" data-id="' + esc(d.id) + '">.*?</g>'), '');
+      if (S.placing.direct) pins = pins.replace(new RegExp('<g class="pin faded [^"]*" data-id="' + esc(d.id) + '">.*?</g>', 'g'), '');
     }
-    if (d && d.view === S.view && d.x != null) {
-      const gr = 12 / Math.sqrt(S.zoom.s);
-      ghost = '<g class="ghost-pin"><circle class="ghost-halo" cx="' + (figX + d.x * fw).toFixed(1) + '" cy="' + (figY + d.y * F.FIG_H * sc).toFixed(1) + '" r="' + (gr * 2.4).toFixed(1) + '"/>' +
-        '<circle class="ghost" cx="' + (figX + d.x * fw).toFixed(1) + '" cy="' + (figY + d.y * F.FIG_H * sc).toFixed(1) + '" r="' + gr.toFixed(1) + '"/></g>';
+    if (d && d.view === S.view) {
+      const gr = 12 / Math.sqrt(S.zoom.s), act = S.placing.active || 0;
+      draftSpots(d).forEach((q, i) => {
+        if (q.x == null) return;
+        const gx = (figX + q.x * fw).toFixed(1), gy = (figY + q.y * F.FIG_H * sc).toFixed(1);
+        ghost += i === act
+          ? '<g class="ghost-pin"><circle class="ghost-halo" cx="' + gx + '" cy="' + gy + '" r="' + (gr * 2.4).toFixed(1) + '"/><circle class="ghost" cx="' + gx + '" cy="' + gy + '" r="' + gr.toFixed(1) + '"/></g>'
+          : '<circle class="ghost-other" cx="' + gx + '" cy="' + gy + '" r="' + (gr * 0.85).toFixed(1) + '"/>';
+      });
     }
 
     const figT = 'translate(' + figX.toFixed(1) + ' ' + figY.toFixed(1) + ') scale(' + sc + ')' + (S.view === 'left' ? ' translate(' + F.FIG_W + ' 0) scale(-1 1)' : '');
@@ -478,10 +498,18 @@
     else if (focus) { const k = old / z.s; z.cx = focus.x + (z.cx - focus.x) * k; z.cy = focus.y + (z.cy - focus.y) * k; }
     renderPlate(); // ghost size depends on zoom
   }
+  // A tattoo can sit in more than one place: the main spot (x, y) plus "extra" spots on the same view.
+  function spotsOf(t) {
+    const ex = Array.isArray(t.extra) ? t.extra.filter((q) => q && q.x != null) : [];
+    return [{ x: t.x, y: t.y }].concat(ex);
+  }
+  // While placing: spot 0 is the draft itself, the rest live in draft.extra.
+  function draftSpots(d) { return [d].concat(Array.isArray(d.extra) ? d.extra : []); }
+  function activeSpot() { const d = S.placing && S.placing.draft; return d ? draftSpots(d)[S.placing.active || 0] : null; }
   function ghostPoint() {
-    const d = S.placing && S.placing.draft, g = S.geo;
-    if (!d || d.x == null || d.view !== S.view) return null;
-    return { x: g.figX + d.x * F.FIG_W * g.sc, y: g.figY + d.y * F.FIG_H * g.sc };
+    const d = S.placing && S.placing.draft, g = S.geo, q = activeSpot();
+    if (!d || !q || q.x == null || d.view !== S.view) return null;
+    return { x: g.figX + q.x * F.FIG_W * g.sc, y: g.figY + q.y * F.FIG_H * g.sc };
   }
 
   // Put the pin at a screen point. Returns false when the point is off the body.
@@ -492,9 +520,16 @@
     const hx = S.view === 'left' ? F.FIG_W - fx : fx;
     const a = F.hit('bodyPath', hx, fy), b = F.hit('armPath', hx, fy);
     if (a === false && b !== true) { if (!quiet) toast('Tap on the body itself'); return false; }
-    const d = S.placing.draft;
-    d.view = S.view; d.x = +(fx / F.FIG_W).toFixed(4); d.y = +(fy / F.FIG_H).toFixed(4);
-    if (!d.part || d.partAuto) { d.part = F.guessPart(S.view, fx, fy); d.partAuto = true; }
+    const d = S.placing.draft, spots = draftSpots(d), placedSpots = spots.filter((q) => q.x != null).length;
+    // Tapping right on another spot picks it to move, instead of moving the current one.
+    if (!quiet && d.view === S.view) {
+      const near = spots.findIndex((q, i) => i !== (S.placing.active || 0) && q.x != null && Math.hypot(g.figX + q.x * F.FIG_W * g.sc - p.x, g.figY + q.y * F.FIG_H * g.sc - p.y) < 26 / Math.sqrt(S.zoom.s));
+      if (near >= 0) { S.placing.active = near; updatePlaceBanner(); return true; }
+    }
+    if (d.view && d.view !== S.view && placedSpots > 1) { if (!quiet) toast('All spots of one tattoo go on the same view'); return false; }
+    const q = activeSpot();
+    d.view = S.view; q.x = +(fx / F.FIG_W).toFixed(4); q.y = +(fy / F.FIG_H).toFixed(4);
+    if ((S.placing.active || 0) === 0 && (!d.part || d.partAuto)) { d.part = F.guessPart(S.view, fx, fy); d.partAuto = true; }
     updatePlaceBanner();
     return true;
   }
@@ -513,10 +548,18 @@
         downAt = { x: e.clientX, y: e.clientY }; moved = false; dragPin = false;
         // Start dragging if the finger lands on (or near) the pin.
         const gp = ghostPoint();
+        const ctm = svg.getScreenCTM(), g = S.geo, d0 = S.placing.draft;
         if (gp) {
-          const ctm = svg.getScreenCTM();
           const sx = gp.x * ctm.a + ctm.e, sy = gp.y * ctm.d + ctm.f;
           if (Math.hypot(sx - e.clientX, sy - e.clientY) < 34) dragPin = true;
+        }
+        // Grabbing one of the tattoo's other spots picks that one up instead.
+        if (!dragPin && d0.view === S.view) {
+          draftSpots(d0).forEach((q, i) => {
+            if (dragPin || q.x == null) return;
+            const sx = (g.figX + q.x * F.FIG_W * g.sc) * ctm.a + ctm.e, sy = (g.figY + q.y * F.FIG_H * g.sc) * ctm.d + ctm.f;
+            if (Math.hypot(sx - e.clientX, sy - e.clientY) < 30) { S.placing.active = i; dragPin = true; updatePlaceBanner(); }
+          });
         }
       } else if (pts.size === 2) {
         const v = Array.from(pts.values()); pinch = { d: dist(v[0], v[1]), s: S.zoom.s }; moved = true; dragPin = false;
@@ -565,15 +608,36 @@
 
   function updatePlaceBanner() {
     const d = S.placing && S.placing.draft; if (!d) return;
-    const placed = d.x != null;
-    $('#placeMsg').textContent = placed
-      ? (d.part ? d.part + '. ' : '') + 'Drag the pin or tap to move it. Pinch or use + to zoom.'
-      : 'Tap the body where it goes. Pinch or use + to zoom. Switch views first if you need to.';
+    const placed = d.x != null, spots = draftSpots(d), q = activeSpot(), n = spots.length;
+    let msg;
+    if (!placed) msg = 'Tap the body where it goes. Pinch or use + to zoom. Switch views first if you need to.';
+    else if (q && q.x == null) msg = 'Tap where spot ' + ((S.placing.active || 0) + 1) + ' goes.';
+    else if (n > 1) msg = 'Spot ' + ((S.placing.active || 0) + 1) + ' of ' + n + '. Drag it, or tap another spot to move that one.';
+    else msg = (d.part ? d.part + '. ' : '') + 'Drag the pin or tap to move it. Pinch or use + to zoom.';
+    $('#placeMsg').textContent = msg;
     $('#placeDone').disabled = !placed;
+    $('#addSpot').hidden = !placed || (q && q.x == null) || n >= 6;
+    $('#delSpot').hidden = n < 2;
   }
+  function addSpot() {
+    const d = S.placing && S.placing.draft; if (!d || d.x == null) return;
+    d.extra = (Array.isArray(d.extra) ? d.extra : []).concat([{ x: null, y: null }]);
+    S.placing.active = d.extra.length;
+    updatePlaceBanner(); renderPlate();
+  }
+  function removeSpot() {
+    const d = S.placing && S.placing.draft; if (!d) return;
+    const i = S.placing.active || 0, ex = Array.isArray(d.extra) ? d.extra.slice() : [];
+    if (!ex.length) return;
+    if (i === 0) { const first = ex.shift(); if (first.x != null) { d.x = first.x; d.y = first.y; } }
+    else ex.splice(i - 1, 1);
+    d.extra = ex; S.placing.active = 0;
+    updatePlaceBanner(); renderPlate();
+  }
+  const cleanExtra = (d) => { const ex = (Array.isArray(d.extra) ? d.extra : []).filter((q) => q && q.x != null).map((q) => ({ x: q.x, y: q.y })); return ex.length ? ex : null; };
 
   function startPlacing(d, direct) {
-    S.placing = { draft: d, direct: !!direct };
+    S.placing = { draft: d, direct: !!direct, active: 0 };
     S.zoom = { s: 1, cx: S.geo ? S.geo.W / 2 : 0, cy: S.geo ? S.geo.H / 2 : 0 };
     closeSheet(true);
     if (d.view && d.view !== S.view) setView(d.view);
@@ -593,11 +657,12 @@
   async function finishPlacing() {
     const p = S.placing; if (!p || p.draft.x == null) return;
     const d = p.draft;
+    d.extra = cleanExtra(d);
     if (!p.direct) { stopPlacing(); openTattooForm(d); return; }
     // Moving an existing pin: save straight away.
     const btn = $('#placeDone'); btn.disabled = true; btn.textContent = 'Saving…';
     try {
-      await S.store.save('tattoos', { id: d.id, view: d.view, x: d.x, y: d.y, part: d.part });
+      await saveTattooRow({ id: d.id, view: d.view, x: d.x, y: d.y, part: d.part, extra: d.extra });
       stopPlacing(); await refresh(); setView(d.view); toast('Pin moved');
     } catch (ex) { toast('Couldn’t save the new spot. Check your connection and try again.'); }
     finally { btn.disabled = false; btn.textContent = 'Done'; }
@@ -757,7 +822,7 @@
       '<label><input type="radio" name="tStatus" value="have"' + (d.status !== 'planned' ? ' checked' : '') + '><span>I have it</span></label>' +
       '<label><input type="radio" name="tStatus" value="planned"' + (d.status === 'planned' ? ' checked' : '') + '><span>Planned</span></label></div></fieldset>' +
       '<div class="field"><span class="lbl">Placement</span><div class="place-row"><span class="place-text">' +
-      (d.x != null ? 'Pinned on the ' + VIEWS[d.view].label.toLowerCase() + ' view' : 'Not placed yet') + '</span>' +
+      (d.x != null ? 'Pinned on the ' + VIEWS[d.view].label.toLowerCase() + ' view' + (cleanExtra(d) ? ', ' + (cleanExtra(d).length + 1) + ' spots' : '') : 'Not placed yet') + '</span>' +
       '<button type="button" class="btn" id="placeBtn">' + (d.x != null ? 'Move pin' : 'Place on body') + '</button></div></div>' +
       '<div class="field"><label for="tPart">Body part</label><input id="tPart" list="partList" maxlength="60" autocomplete="off" placeholder="Filled in when you place it" value="' + esc(d.part) + '">' +
       '<datalist id="partList">' + PARTS.map((p) => '<option value="' + p + '">').join('') + '</datalist></div>' +
@@ -822,7 +887,7 @@
       try {
         let path = d.image_path || null, old = null;
         if (d._file) { btn.textContent = 'Uploading photo…'; path = await uploadPhoto(d._ready ? d._file : await prepareImage(d._file)); old = d.image_path; }
-        const row = { name: d.name || 'Untitled', status: d.status, view: d.view, x: d.x, y: d.y, part: d.part, artist: d.artist, studio: d.studio || '', price: d.status === 'planned' ? '' : (d.price || ''), pain: d.status === 'planned' ? null : (d.pain || null), date: d.date || null, notes: d.notes, image_path: path };
+        const row = { name: d.name || 'Untitled', status: d.status, view: d.view, x: d.x, y: d.y, part: d.part, artist: d.artist, studio: d.studio || '', extra: cleanExtra(d), price: d.status === 'planned' ? '' : (d.price || ''), pain: d.status === 'planned' ? null : (d.pain || null), date: d.date || null, notes: d.notes, image_path: path };
         if (d.id) row.id = d.id;
         const saved = await saveTattooRow(row);
         if (old && old !== path) S.store.removeImage(old, thumbOf(old)).catch(() => {});
@@ -1008,13 +1073,13 @@
   }
   // Saves a tattoo. If the database is missing a newer column (studio, price, pain),
   // saves without it and says a quick database update is needed.
-  const EXTRA_COLS = ['studio', 'price', 'pain'];
+  const EXTRA_COLS = ['studio', 'price', 'pain', 'extra'];
   async function saveTattooRow(row) {
     const r = Object.assign({}, row), dropped = [];
     for (let i = 0; i <= EXTRA_COLS.length; i++) {
       try {
         const saved = await S.store.save('tattoos', r);
-        if (dropped.some((c) => row[c])) toast('Saved, but ' + dropped.join(' and ') + ' need a quick database update');
+        if (dropped.some((c) => row[c])) toast('Saved, but ' + dropped.map((c) => (c === 'extra' ? 'extra spots' : c)).join(' and ') + ' need a quick database update');
         return saved;
       } catch (ex) {
         const msg = (ex && ex.message) || '';

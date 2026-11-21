@@ -395,3 +395,9 @@ img.ph.in { opacity: 1; }
 #plate.emph .pin:not(.sel) { transform: scale(.8); opacity: .5; }
 #plate.emph .lead:not(.sel), #plate.emph .lead-in:not(.sel) { opacity: .3; }
 @media (prefers-reduced-motion: reduce) { #plate .label, #plate .pin, #plate .lead, #plate .lead-in { transition: none; } }
+
+/* One tattoo in several places. */
+.lead-joint { fill: var(--black); }
+.ghost-other { fill: var(--cream); stroke: var(--black); stroke-width: 3; opacity: .9; }
+.place-btns { flex-wrap: wrap; justify-content: flex-end; }
+.place-banner .btn.ghost#addSpot { border: 2px solid var(--black); }
