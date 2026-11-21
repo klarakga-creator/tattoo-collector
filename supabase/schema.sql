@@ -11,12 +11,16 @@ create table if not exists public.tattoos (
   y real not null,
   part text not null default '',
   artist text not null default '',
+  studio text not null default '',
   date date,
   notes text not null default '',
   image_path text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Added later: separate studio field (safe to run again).
+alter table public.tattoos add column if not exists studio text not null default '';
 
 create table if not exists public.inspirations (
   id uuid primary key default gen_random_uuid(),

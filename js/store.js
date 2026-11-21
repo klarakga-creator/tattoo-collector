@@ -11,7 +11,12 @@
       auth: { persistSession: true, autoRefreshToken: true }
     });
     const listeners = new Set();
+    // Signed photo links, kept between visits so the browser can reuse its cached images.
+    const URL_KEY = 'tc-urls-v1';
     const urlCache = new Map(); // path -> {url, exp}
+    try { Object.entries(JSON.parse(localStorage.getItem(URL_KEY) || '{}')).forEach(([k, v]) => { if (v.exp > Date.now()) urlCache.set(k, v); }); } catch (e) { /* ignore */ }
+    const saveUrls = () => { try { localStorage.setItem(URL_KEY, JSON.stringify(Object.fromEntries(urlCache))); } catch (e) { /* ignore */ } };
+    const missing = new Set();
     let channel = null, timer = null;
 
     const emit = () => { clearTimeout(timer); timer = setTimeout(() => listeners.forEach((f) => f()), 150); };
@@ -62,27 +67,33 @@
         if (error) throw error;
         emit();
       },
-      async upload(blob) {
-        const { data: u } = await sb.auth.getUser();
-        const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : blob.type === 'image/gif' ? 'gif' : 'jpg';
-        const path = u.user.id + '/' + crypto.randomUUID() + '.' + ext;
+      async upload(blob, name) {
+        let path = name;
+        if (!path) {
+          const { data: sess } = await sb.auth.getSession();
+          const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : blob.type === 'image/gif' ? 'gif' : 'jpg';
+          path = sess.session.user.id + '/' + crypto.randomUUID() + '.' + ext;
+        }
         const { error } = await sb.storage.from(BUCKET).upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: false });
         if (error) throw error;
         return path;
       },
-      async removeImage(path) { if (path) await sb.storage.from(BUCKET).remove([path]); },
+      async removeImage(...paths) { paths = paths.filter(Boolean); if (paths.length) await sb.storage.from(BUCKET).remove(paths); },
+      cachedUrls(paths) { const o = {}, now = Date.now(); paths.forEach((p) => { const c = urlCache.get(p); if (c && c.exp > now) o[p] = c.url; }); return o; },
       // Signed links for private photos, cached until shortly before expiry.
       async urls(paths) {
         const now = Date.now(), out = {}, need = [];
         paths.filter(Boolean).forEach((p) => {
           const c = urlCache.get(p);
-          if (c && c.exp > now) out[p] = c.url; else need.push(p);
+          if (c && c.exp > now) out[p] = c.url; else if (!missing.has(p)) need.push(p);
         });
         if (need.length) {
           const { data, error } = await sb.storage.from(BUCKET).createSignedUrls(need, 60 * 60 * 24 * 7);
           if (!error && data) data.forEach((d) => {
             if (d.signedUrl) { out[d.path] = d.signedUrl; urlCache.set(d.path, { url: d.signedUrl, exp: now + 1000 * 60 * 60 * 24 * 6 }); }
+            else if (d.path) missing.add(d.path);
           });
+          saveUrls();
         }
         return out;
       }
@@ -133,8 +144,8 @@
         const r = Object.assign({}, row, { id: id(), created_at: now() }); data[t].push(r); emit(); return r;
       },
       async remove(t, rid) { data[t] = data[t].filter((r) => r.id !== rid); emit(); },
-      async upload(blob) { const p = 'demo/' + id(); images[p] = URL.createObjectURL(blob); return p; },
-      async removeImage(p) { delete images[p]; },
+      async upload(blob, name) { const p = name || 'demo/' + id() + '.jpg'; images[p] = URL.createObjectURL(blob); return p; },
+      async removeImage(...ps) { ps.forEach((p) => delete images[p]); },
       async urls(paths) { const o = {}; paths.forEach((p) => { if (images[p]) o[p] = images[p]; }); return o; }
     };
   }

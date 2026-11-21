@@ -26,7 +26,7 @@
 
   const S = {
     store: null, view: 'front', filter: 'all', region: 'all',
-    tattoos: [], inspo: [], urls: {}, selected: null, placing: null, geo: null, loaded: false
+    tattoos: [], inspo: [], urls: {}, selected: null, placing: null, geo: null, loaded: false, zoom: { s: 1, cx: 0, cy: 0 }
   };
   const $ = (s, el) => (el || document).querySelector(s);
   const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
@@ -34,6 +34,11 @@
   const clip = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s; };
   const fmtDate = (d) => { if (!d) return ''; const x = new Date(d + 'T00:00:00'); return isNaN(x) ? d : x.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }); };
   const img = (p) => (p && S.urls[p]) || '';
+  const thumbOf = (p) => (p ? p.replace(/\.[a-z]+$/i, '') + '.thumb.jpg' : p);
+  const thumb = (p) => (p && (S.urls[thumbOf(p)] || S.urls[p])) || '';
+  const CACHE_KEY = 'tc-cache-v1';
+  function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { return null; } }
+  function writeCache() { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: S.tattoos, i: S.inspo, at: Date.now() })); } catch (e) { /* storage full or blocked */ } }
 
   // ---------- boot ----------
   async function boot() {
@@ -52,6 +57,14 @@
   function startApp() {
     $('#signin').hidden = true; $('#app').hidden = false;
     S.store.onChange(refresh);
+    // Show what we had last time straight away, then refresh in the background.
+    const c = !S.store.demo && readCache();
+    if (c && c.t) {
+      S.tattoos = c.t; S.inspo = c.i || [];
+      const paths = S.tattoos.map((r) => r.image_path).concat(S.inspo.map((r) => r.image_path)).filter(Boolean);
+      Object.assign(S.urls, S.store.cachedUrls ? S.store.cachedUrls(paths.concat(paths.map(thumbOf))) : {});
+      S.loaded = true; renderAll();
+    }
     S.store.start();
     refresh();
   }
@@ -80,9 +93,10 @@
       const [t, i] = await Promise.all([S.store.list('tattoos'), S.store.list('inspirations')]);
       S.tattoos = t; S.inspo = i;
       const paths = t.map((r) => r.image_path).concat(i.map((r) => r.image_path)).filter(Boolean);
-      Object.assign(S.urls, await S.store.urls(paths));
+      Object.assign(S.urls, await S.store.urls(paths.concat(paths.map(thumbOf))));
       S.loaded = true; $('#offline').hidden = true;
-      renderAll();
+      if (!S.store.demo) writeCache();
+      if (!S.placing) renderAll(); else { renderCounts(); renderList(); renderInspo(); }
     } catch (ex) {
       console.warn(ex);
       $('#offline').hidden = false;
@@ -112,9 +126,19 @@
       else newTattoo();
     });
     $('#addInspo').addEventListener('click', () => openInspoForm({ region: S.region === 'all' ? 'anywhere' : S.region, link: '', note: '' }));
-    $('#cancelPlace').addEventListener('click', () => { const d = S.placing.draft; stopPlacing(); openTattooForm(d); });
+    $('#cancelPlace').addEventListener('click', () => {
+      const p = S.placing; stopPlacing();
+      if (!p.direct) openTattooForm(p.draft); else openDetail(p.draft.id);
+    });
+    $('#placeDone').addEventListener('click', finishPlacing);
+    $$('.zoom-ctl button').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const z = b.dataset.z;
+      if (z === 'fit') setZoom(1); else setZoom(S.zoom.s * (z === 'in' ? 1.6 : 1 / 1.6), ghostPoint());
+    }));
+    wirePlateGestures();
     $('#plate').addEventListener('click', onPlateClick);
-    $('#signOut').addEventListener('click', async () => { await S.store.signOut(); location.reload(); });
+    $('#signOut').addEventListener('click', async () => { try { localStorage.removeItem(CACHE_KEY); } catch (e) { /* ignore */ } await S.store.signOut(); location.reload(); });
     $('#sheetWrap').addEventListener('click', (e) => { if (e.target.matches('.scrim') || e.target.closest('[data-close]')) closeSheet(); });
     $('#lightbox').addEventListener('click', () => { $('#lightbox').hidden = true; });
     document.addEventListener('keydown', (e) => {
@@ -157,7 +181,7 @@
   function renderPlate() {
     const svg = $('#plate'); if (!svg) return;
     const narrow = (svg.parentNode.clientWidth || 800) < 600;
-    const W = narrow ? 720 : 960, H = 880, sc = narrow ? 0.9 : 0.98;
+    const W = narrow ? 720 : 1040, H = 880, sc = narrow ? 0.9 : 0.98;
     const fw = F.FIG_W * sc, figX = (W - fw) / 2, figY = (H - F.FIG_H * sc) / 2 - 4;
     S.geo = { W, H, sc, figX, figY, narrow };
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
@@ -173,7 +197,7 @@
     const place = (it, leftCol) => {
       const t = it.t, sel = S.selected === t.id, planned = t.status === 'planned';
       const cy = it.ly;
-      const cx = narrow ? (leftCol ? figX / 2 + 2 : W - figX / 2 - 2) : (leftCol ? figX - 64 : figX + fw + 64);
+      const cx = narrow ? (leftCol ? figX / 2 + 2 : W - figX / 2 - 2) : (leftCol ? figX - 56 : figX + fw + 56);
       const ang = Math.atan2(it.py - cy, it.px - cx);
       const ex = cx + Math.cos(ang) * (r + 5), ey = cy + Math.sin(ang) * (r + 5);
       const cls = (planned ? 'planned' : 'have') + (sel ? ' sel' : '');
@@ -181,30 +205,39 @@
       lines += '<line class="lead ' + cls + '" ' + seg + '/><line class="lead-in ' + cls + '" clip-path="url(#onBody)" ' + seg + '/>';
       pins += '<g class="pin ' + cls + '" data-id="' + esc(t.id) + '"><circle class="hitarea" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="20"/>' +
         '<circle class="dot" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="' + (sel ? 11 : 8.5) + '"/></g>';
-      const u = img(t.image_path);
-      const thumb = u
+      const u = thumb(t.image_path);
+      const thumbEl = u
         ? '<image href="' + esc(u) + '" x="' + (cx - r) + '" y="' + (cy - r) + '" width="' + 2 * r + '" height="' + 2 * r + '" preserveAspectRatio="xMidYMid slice" clip-path="url(#circ)"/>'
         : '<text class="initial" x="' + cx + '" y="' + (cy + 11) + '" text-anchor="middle">' + esc((t.name || '?').trim().charAt(0).toUpperCase()) + '</text>';
       let text;
       if (narrow) {
-        text = '<text class="lb-name" x="' + cx + '" y="' + (cy + r + 32) + '" text-anchor="middle">' + esc(clip((t.name || 'Untitled').toUpperCase(), 16)) + '</text>' +
-          '<text class="lb-part" x="' + cx + '" y="' + (cy + r + 56) + '" text-anchor="middle">' + esc(clip(t.part, 17)) + '</text>';
+        const mw = figX - 12;
+        text = '<text class="lb-name fit" data-max="' + mw + '" x="' + cx + '" y="' + (cy + r + 32) + '" text-anchor="middle">' + esc((t.name || 'Untitled').toUpperCase()) + '</text>' +
+          '<text class="lb-part fit" data-max="' + mw + '" x="' + cx + '" y="' + (cy + r + 56) + '" text-anchor="middle">' + esc(t.part || '') + '</text>';
       } else {
         const tx = leftCol ? cx - r - 14 : cx + r + 14, anchor = leftCol ? 'end' : 'start';
-        text = '<text class="lb-name" x="' + tx + '" y="' + (cy + 2) + '" text-anchor="' + anchor + '">' + esc(clip((t.name || 'Untitled').toUpperCase(), 18)) + '</text>' +
-          '<text class="lb-part" x="' + tx + '" y="' + (cy + 26) + '" text-anchor="' + anchor + '">' + esc(clip(t.part, 24)) + '</text>';
+        const mw = (leftCol ? tx : W - tx) - 18;
+        text = '<text class="lb-name fit" data-max="' + mw + '" x="' + tx + '" y="' + (cy + 2) + '" text-anchor="' + anchor + '">' + esc((t.name || 'Untitled').toUpperCase()) + '</text>' +
+          '<text class="lb-part fit" data-max="' + mw + '" x="' + tx + '" y="' + (cy + 26) + '" text-anchor="' + anchor + '">' + esc(t.part || '') + '</text>';
       }
       labels += '<g class="label ' + cls + '" data-id="' + esc(t.id) + '" tabindex="0" role="button" aria-label="' + esc((t.name || 'Untitled') + ', ' + (t.part || '')) + '">' +
         '<rect class="hitarea" x="' + (narrow ? cx - 100 : (leftCol ? cx - 250 : cx - r - 6)) + '" y="' + (cy - r - 6) + '" width="' + (narrow ? 200 : 256) + '" height="' + (narrow ? 2 * r + 76 : 2 * r + 12) + '"/>' +
-        '<circle class="thumb-bg" cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>' + thumb +
+        '<circle class="thumb-bg" cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>' + thumbEl +
         '<circle class="thumb-ring" cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>' + text + '</g>';
     };
     L.forEach((i) => place(i, true)); R.forEach((i) => place(i, false));
 
     let ghost = '';
     const d = S.placing && S.placing.draft;
+    if (S.placing) {
+      lines = ''; labels = '';
+      pins = pins.replace(/class="pin /g, 'class="pin faded ');
+      if (S.placing.direct) pins = pins.replace(new RegExp('<g class="pin faded [^"]*" data-id="' + esc(d.id) + '">.*?</g>'), '');
+    }
     if (d && d.view === S.view && d.x != null) {
-      ghost = '<circle class="ghost" cx="' + (figX + d.x * fw).toFixed(1) + '" cy="' + (figY + d.y * F.FIG_H * sc).toFixed(1) + '" r="11"/>';
+      const gr = 12 / Math.sqrt(S.zoom.s);
+      ghost = '<g class="ghost-pin"><circle class="ghost-halo" cx="' + (figX + d.x * fw).toFixed(1) + '" cy="' + (figY + d.y * F.FIG_H * sc).toFixed(1) + '" r="' + (gr * 2.4).toFixed(1) + '"/>' +
+        '<circle class="ghost" cx="' + (figX + d.x * fw).toFixed(1) + '" cy="' + (figY + d.y * F.FIG_H * sc).toFixed(1) + '" r="' + gr.toFixed(1) + '"/></g>';
     }
 
     const figT = 'translate(' + figX.toFixed(1) + ' ' + figY.toFixed(1) + ') scale(' + sc + ')' + (S.view === 'left' ? ' translate(' + F.FIG_W + ' 0) scale(-1 1)' : '');
@@ -222,7 +255,9 @@
       '<defs><clipPath id="circ" clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5"/></clipPath>' +
       '<clipPath id="onBody">' + clipBody + '</clipPath></defs>' +
       '<g class="fig" transform="translate(' + figX.toFixed(1) + ' ' + figY.toFixed(1) + ') scale(' + sc + ')">' + F.markup(S.view) + '</g>' +
-      marks + lines + pins + labels + ghost + empty;
+      marks + lines + pins + labels + ghost + (S.placing ? '' : empty);
+    fitLabels(svg);
+    applyZoom();
 
     const v = VIEWS[S.view];
     const here = items.length, planned = items.filter((i) => i.t.status === 'planned').length;
@@ -240,7 +275,7 @@
   }
 
   function onPlateClick(e) {
-    if (S.placing) return placeAt(e);
+    if (S.placing) return; // placing uses pointer gestures below
     const g = e.target.closest('[data-id]');
     if (g) openDetail(g.dataset.id);
   }
@@ -248,29 +283,147 @@
     if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-id]')) { e.preventDefault(); openDetail(e.target.closest('[data-id]').dataset.id); }
   });
 
-  function placeAt(e) {
-    const p = svgPoint(e), g = S.geo;
+  // ---- zoom (only while placing a pin) ----
+  function applyZoom() {
+    const svg = $('#plate'), g = S.geo; if (!svg || !g) return;
+    const z = S.zoom;
+    if (!S.placing || z.s <= 1.001) { svg.setAttribute('viewBox', '0 0 ' + g.W + ' ' + g.H); return; }
+    const w = g.W / z.s, h = g.H / z.s;
+    z.cx = Math.min(g.W - w / 2, Math.max(w / 2, z.cx));
+    z.cy = Math.min(g.H - h / 2, Math.max(h / 2, z.cy));
+    svg.setAttribute('viewBox', (z.cx - w / 2).toFixed(1) + ' ' + (z.cy - h / 2).toFixed(1) + ' ' + w.toFixed(1) + ' ' + h.toFixed(1));
+  }
+  function setZoom(s, focus) {
+    const g = S.geo, z = S.zoom, old = z.s;
+    z.s = Math.min(6, Math.max(1, s));
+    if (z.s <= 1.001) { z.cx = g.W / 2; z.cy = g.H / 2; }
+    else if (focus) { const k = old / z.s; z.cx = focus.x + (z.cx - focus.x) * k; z.cy = focus.y + (z.cy - focus.y) * k; }
+    renderPlate(); // ghost size depends on zoom
+  }
+  function ghostPoint() {
+    const d = S.placing && S.placing.draft, g = S.geo;
+    if (!d || d.x == null || d.view !== S.view) return null;
+    return { x: g.figX + d.x * F.FIG_W * g.sc, y: g.figY + d.y * F.FIG_H * g.sc };
+  }
+
+  // Put the pin at a screen point. Returns false when the point is off the body.
+  function placeAtPoint(p, quiet) {
+    const g = S.geo;
     const fx = (p.x - g.figX) / g.sc, fy = (p.y - g.figY) / g.sc;
-    if (fx < 0 || fx > F.FIG_W || fy < 0 || fy > F.FIG_H) return toast('Tap on the body itself');
+    if (fx < 0 || fx > F.FIG_W || fy < 0 || fy > F.FIG_H) { if (!quiet) toast('Tap on the body itself'); return false; }
     const hx = S.view === 'left' ? F.FIG_W - fx : fx;
     const a = F.hit('bodyPath', hx, fy), b = F.hit('armPath', hx, fy);
-    if (a === false && b !== true) return toast('Tap on the body itself');
+    if (a === false && b !== true) { if (!quiet) toast('Tap on the body itself'); return false; }
     const d = S.placing.draft;
     d.view = S.view; d.x = +(fx / F.FIG_W).toFixed(4); d.y = +(fy / F.FIG_H).toFixed(4);
     if (!d.part || d.partAuto) { d.part = F.guessPart(S.view, fx, fy); d.partAuto = true; }
-    renderPlate();
-    setTimeout(() => { stopPlacing(); openTattooForm(d); }, 260);
+    updatePlaceBanner();
+    return true;
   }
 
-  function startPlacing(d) {
-    S.placing = { draft: d };
+  function wirePlateGestures() {
+    const svg = $('#plate');
+    const pts = new Map(); let pinch = null, downAt = null, moved = false, dragPin = false;
+    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    const toSvg = (cx, cy) => svgPoint({ clientX: cx, clientY: cy });
+    svg.addEventListener('pointerdown', (e) => {
+      if (!S.placing) return;
+      e.preventDefault();
+      try { svg.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 1) {
+        downAt = { x: e.clientX, y: e.clientY }; moved = false; dragPin = false;
+        // Start dragging if the finger lands on (or near) the pin.
+        const gp = ghostPoint();
+        if (gp) {
+          const ctm = svg.getScreenCTM();
+          const sx = gp.x * ctm.a + ctm.e, sy = gp.y * ctm.d + ctm.f;
+          if (Math.hypot(sx - e.clientX, sy - e.clientY) < 34) dragPin = true;
+        }
+      } else if (pts.size === 2) {
+        const v = Array.from(pts.values()); pinch = { d: dist(v[0], v[1]), s: S.zoom.s }; moved = true; dragPin = false;
+      }
+    });
+    svg.addEventListener('pointermove', (e) => {
+      if (!S.placing || !pts.has(e.pointerId)) return;
+      const prev = pts.get(e.pointerId), cur = { x: e.clientX, y: e.clientY };
+      pts.set(e.pointerId, cur);
+      if (pts.size === 1) {
+        if (Math.hypot(cur.x - downAt.x, cur.y - downAt.y) > 6) moved = true;
+        if (!moved) return;
+        if (dragPin) { if (placeAtPoint(toSvg(cur.x, cur.y), true)) renderPlate(); }
+        else if (S.zoom.s > 1) {
+          const k = (S.geo.W / S.zoom.s) / svg.clientWidth;
+          S.zoom.cx -= (cur.x - prev.x) * k; S.zoom.cy -= (cur.y - prev.y) * k; applyZoom();
+        }
+      } else if (pinch && pts.size === 2) {
+        const v = Array.from(pts.values());
+        const mid = toSvg((v[0].x + v[1].x) / 2, (v[0].y + v[1].y) / 2);
+        const want = pinch.s * dist(v[0], v[1]) / pinch.d;
+        if (Math.abs(want - S.zoom.s) > 0.02) setZoom(want, mid);
+      }
+    });
+    const up = (e) => {
+      if (!S.placing) { pts.clear(); return; }
+      if (pts.size === 1 && pts.has(e.pointerId) && !moved && e.type === 'pointerup') {
+        const p = toSvg(e.clientX, e.clientY);
+        const first = S.placing.draft.x == null || S.placing.draft.view !== S.view;
+        if (placeAtPoint(p)) {
+          // First tap: zoom in around it so the next taps can fine-tune.
+          if (first && S.zoom.s < 1.5) setZoom(2.6, p); else renderPlate();
+        }
+      } else if (dragPin && moved) toast('Pin moved');
+      pts.delete(e.pointerId);
+      if (pts.size < 2) pinch = null;
+    };
+    svg.addEventListener('pointerup', up);
+    svg.addEventListener('pointercancel', up);
+    svg.addEventListener('wheel', (e) => {
+      if (!S.placing) return;
+      e.preventDefault();
+      setZoom(S.zoom.s * Math.exp(-e.deltaY * 0.0025), svgPoint(e));
+    }, { passive: false });
+  }
+
+  function updatePlaceBanner() {
+    const d = S.placing && S.placing.draft; if (!d) return;
+    const placed = d.x != null;
+    $('#placeMsg').textContent = placed
+      ? (d.part ? d.part + '. ' : '') + 'Drag the pin or tap to move it. Pinch or use + to zoom.'
+      : 'Tap the body where it goes. Pinch or use + to zoom. Switch views first if you need to.';
+    $('#placeDone').disabled = !placed;
+  }
+
+  function startPlacing(d, direct) {
+    S.placing = { draft: d, direct: !!direct };
+    S.zoom = { s: 1, cx: S.geo ? S.geo.W / 2 : 0, cy: S.geo ? S.geo.H / 2 : 0 };
     closeSheet(true);
     if (d.view && d.view !== S.view) setView(d.view);
     $('#placeBanner').hidden = false;
+    document.body.classList.add('placing');
+    updatePlaceBanner();
     renderPlate();
-    $('.plate').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Start zoomed in on an existing pin so it's easy to nudge.
+    const gp = ghostPoint(); if (gp) setZoom(2.2, gp);
+    $('.body-main').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  function stopPlacing() { S.placing = null; $('#placeBanner').hidden = true; renderPlate(); }
+  function stopPlacing() {
+    S.placing = null; S.zoom = { s: 1, cx: 0, cy: 0 };
+    $('#placeBanner').hidden = true; document.body.classList.remove('placing');
+    renderPlate();
+  }
+  async function finishPlacing() {
+    const p = S.placing; if (!p || p.draft.x == null) return;
+    const d = p.draft;
+    if (!p.direct) { stopPlacing(); openTattooForm(d); return; }
+    // Moving an existing pin: save straight away.
+    const btn = $('#placeDone'); btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await S.store.save('tattoos', { id: d.id, view: d.view, x: d.x, y: d.y, part: d.part });
+      stopPlacing(); await refresh(); setView(d.view); toast('Pin moved');
+    } catch (ex) { toast('Couldn’t save the new spot. Check your connection and try again.'); }
+    finally { btn.disabled = false; btn.textContent = 'Done'; }
+  }
 
   // ---------- counts & list ----------
   function renderCounts() {
@@ -292,7 +445,7 @@
     }
     const tones = ['coral', 'ink', 'mustard', 'violet', 'mint'];
     $('#list').innerHTML = list.map((t, k) => {
-      const u = img(t.image_path), planned = t.status === 'planned';
+      const u = thumb(t.image_path), planned = t.status === 'planned';
       return '<button class="card tone-' + tones[k % tones.length] + '" data-open="' + esc(t.id) + '">' +
         '<span class="card-top">' +
         (u ? '<img src="' + esc(u) + '" alt="" loading="lazy">' : '<span class="noimg">' + esc((t.name || '?').charAt(0).toUpperCase()) + '</span>') +
@@ -328,7 +481,7 @@
     const t = S.tattoos.find((x) => x.id === id); if (!t) return;
     S.selected = id; renderPlate();
     const u = img(t.image_path), reg = regionOf(t.part), ideas = S.inspo.filter((i) => i.region === reg).length;
-    const facts = [['Artist / studio', t.artist], [t.status === 'planned' ? 'Target date' : 'Date', fmtDate(t.date)], ['Notes', t.notes]].filter((f) => f[1]);
+    const facts = [['Artist', t.artist], ['Studio', t.studio], [t.status === 'planned' ? 'Target date' : 'Date', fmtDate(t.date)], ['Notes', t.notes]].filter((f) => f[1]);
     openSheet(
       '<div class="sheet-head"><span class="tag-pill"><i class="dot ' + (t.status === 'planned' ? 'planned' : 'have') + '"></i>' + (t.status === 'planned' ? 'Planned' : 'Inked') + '</span>' +
       '<button class="icon-btn" data-close aria-label="Close">✕</button></div>' +
@@ -337,15 +490,16 @@
       '<div class="card-tags"><span class="tag-pill">' + esc(t.part || 'No body part set') + '</span><span class="tag-pill">' + VIEWS[t.view].label + ' view</span></div>' +
       (facts.length ? '<dl class="facts">' + facts.map((f) => '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + '</dd></div>').join('') + '</dl>' : '') +
       '<button class="link-btn" id="dIdeas">' + (ideas ? ideas + ' inspiration ' + (ideas === 1 ? 'idea' : 'ideas') : 'Inspiration') + ' for ' + regionLabel(reg).toLowerCase() + ' →</button>' +
-      '<div class="form-actions"><button class="btn danger" id="dDel">Delete</button><span class="grow"></span><button class="btn primary" id="dEdit">Edit</button></div>'
+      '<div class="form-actions"><button class="btn danger" id="dDel">Delete</button><span class="grow"></span><button class="btn" id="dMove">Move pin</button><button class="btn primary" id="dEdit">Edit</button></div>'
     );
     if (u) $('#dImg').addEventListener('click', () => lightbox(u));
     $('#dIdeas').addEventListener('click', () => { closeSheet(); S.region = reg; location.hash = '#inspiration'; renderInspo(); });
     $('#dEdit').addEventListener('click', () => openTattooForm(Object.assign({}, t)));
+    $('#dMove').addEventListener('click', () => startPlacing(Object.assign({}, t), true));
     confirmButton($('#dDel'), 'Tap again to delete', async () => {
       try {
         await S.store.remove('tattoos', t.id);
-        if (t.image_path) S.store.removeImage(t.image_path).catch(() => {});
+        if (t.image_path) S.store.removeImage(t.image_path, thumbOf(t.image_path)).catch(() => {});
         S.tattoos = S.tattoos.filter((x) => x.id !== t.id);
         closeSheet(); renderAll(); toast('Deleted “' + (t.name || 'Untitled') + '”');
       } catch (ex) { toast('Could not delete. Check your connection and try again.'); }
@@ -388,7 +542,7 @@
     openSheet(
       '<div class="sheet-head"><h3>' + (d.id ? 'Edit tattoo' : 'Add a tattoo') + '</h3><button class="icon-btn" data-close aria-label="Close">✕</button></div>' +
       '<form id="tForm" class="form" novalidate>' +
-      '<label class="photo-drop' + (u ? ' has' : '') + '" for="tPhoto">' + (u ? '<img src="' + esc(u) + '" alt="">' : '') + '<span>' + (u ? 'Change photo' : 'Add a photo') + '</span></label>' +
+      '<div id="tPhotoBox">' + photoBlock(u, 'tPhoto', 'Add a photo') + '</div>' +
       '<input type="file" id="tPhoto" accept="image/*" class="visually-hidden">' +
       '<div class="field"><label for="tName">Name</label><input id="tName" maxlength="80" autocomplete="off" placeholder="e.g. Fine-line peony" value="' + esc(d.name) + '"></div>' +
       '<fieldset class="field"><legend>Status</legend><div class="radio-seg">' +
@@ -399,8 +553,9 @@
       '<button type="button" class="btn" id="placeBtn">' + (d.x != null ? 'Move pin' : 'Place on body') + '</button></div></div>' +
       '<div class="field"><label for="tPart">Body part</label><input id="tPart" list="partList" maxlength="60" autocomplete="off" placeholder="Filled in when you place it" value="' + esc(d.part) + '">' +
       '<datalist id="partList">' + PARTS.map((p) => '<option value="' + p + '">').join('') + '</datalist></div>' +
-      '<div class="grid2"><div class="field"><label for="tArtist">Artist / studio</label><input id="tArtist" maxlength="80" value="' + esc(d.artist) + '"></div>' +
-      '<div class="field"><label for="tDate">Date</label><input id="tDate" type="date" value="' + esc(d.date || '') + '"></div></div>' +
+      '<div class="field"><label for="tArtist">Artist</label><input id="tArtist" maxlength="80" autocomplete="off" placeholder="Who tattooed it" value="' + esc(d.artist) + '"></div>' +
+      '<div class="field"><label for="tStudio">Studio</label><input id="tStudio" maxlength="80" autocomplete="off" placeholder="Where" value="' + esc(d.studio) + '"></div>' +
+      '<div class="field"><label for="tDate">' + (d.status === 'planned' ? 'Target date' : 'Date') + '</label><input id="tDate" type="date" value="' + esc(d.date || '') + '"></div>' +
       '<div class="field"><label for="tNotes">Notes</label><textarea id="tNotes" rows="3" placeholder="Meaning, size, healing, price…">' + esc(d.notes) + '</textarea></div>' +
       '<p class="form-err" id="tErr" hidden></p>' +
       '<div class="form-actions"><button type="button" class="btn ghost" data-close>Cancel</button><span class="grow"></span><button type="submit" class="btn primary" id="tSave">Save tattoo</button></div>' +
@@ -409,14 +564,24 @@
     const collect = () => {
       d.name = $('#tName').value.trim();
       d.status = ($('input[name=tStatus]:checked') || {}).value || 'have';
-      d.artist = $('#tArtist').value.trim(); d.date = $('#tDate').value; d.notes = $('#tNotes').value.trim();
+      d.artist = $('#tArtist').value.trim(); d.studio = $('#tStudio').value.trim(); d.date = $('#tDate').value; d.notes = $('#tNotes').value.trim();
       d.part = $('#tPart').value.trim();
     };
     $('#tPart').addEventListener('input', () => { d.partAuto = false; });
-    $('#tPhoto').addEventListener('change', (e) => {
-      const f = e.target.files[0]; if (!f) return;
-      d._file = f; d._preview = URL.createObjectURL(f);
-      const lab = $('.photo-drop'); lab.classList.add('has'); lab.innerHTML = '<img src="' + d._preview + '" alt=""><span>Change photo</span>';
+    const showPhoto = () => { $('#tPhotoBox').innerHTML = photoBlock(d._preview || img(d.image_path), 'tPhoto', 'Add a photo'); wireCrop(); };
+    const cropFrom = async (src) => {
+      const out = await window.Cropper.open(src);
+      if (out) { d._file = out; d._ready = true; d._preview = URL.createObjectURL(out); showPhoto(); }
+      else if (!(src instanceof Blob)) toast('Couldn’t open that photo for editing');
+    };
+    const wireCrop = () => { const b = $('#tPhotoBox [data-crop]'); if (b) b.addEventListener('click', () => cropFrom(d._file || img(d.image_path))); };
+    wireCrop();
+    $('#tPhoto').addEventListener('change', async (e) => {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      let full;
+      try { full = await prepareImage(f); } catch (ex) { toast(ex.message); return; }
+      d._file = full; d._ready = true; d._preview = URL.createObjectURL(full); showPhoto();
+      cropFrom(full);
     });
     $('#placeBtn').addEventListener('click', () => { collect(); startPlacing(d); });
     $('#tForm').addEventListener('submit', async (e) => {
@@ -426,11 +591,11 @@
       const btn = $('#tSave'); btn.disabled = true; btn.textContent = 'Saving…'; err.hidden = true;
       try {
         let path = d.image_path || null, old = null;
-        if (d._file) { btn.textContent = 'Uploading photo…'; path = await S.store.upload(await prepareImage(d._file)); old = d.image_path; }
-        const row = { name: d.name || 'Untitled', status: d.status, view: d.view, x: d.x, y: d.y, part: d.part, artist: d.artist, date: d.date || null, notes: d.notes, image_path: path };
+        if (d._file) { btn.textContent = 'Uploading photo…'; path = await uploadPhoto(d._ready ? d._file : await prepareImage(d._file)); old = d.image_path; }
+        const row = { name: d.name || 'Untitled', status: d.status, view: d.view, x: d.x, y: d.y, part: d.part, artist: d.artist, studio: d.studio || '', date: d.date || null, notes: d.notes, image_path: path };
         if (d.id) row.id = d.id;
-        const saved = await S.store.save('tattoos', row);
-        if (old && old !== path) S.store.removeImage(old).catch(() => {});
+        const saved = await saveTattooRow(row);
+        if (old && old !== path) S.store.removeImage(old, thumbOf(old)).catch(() => {});
         closeSheet(true);
         await refresh();
         if (saved && saved.id) { setView(saved.view); openDetail(saved.id); }
@@ -487,9 +652,17 @@
       files = Array.from(e.target.files || []); if (!files.length) return;
       const lab = $('.photo-drop'); lab.classList.add('has');
       lab.innerHTML = '<img src="' + URL.createObjectURL(files[0]) + '" alt=""><span>' + (files.length > 1 ? files.length + ' images selected' : 'Change image') + '</span>';
+      if (files.length === 1) {
+        (async () => {
+          let full; try { full = await prepareImage(files[0]); } catch (ex) { return; }
+          const out = await window.Cropper.open(full);
+          const use = out || full; use._ready = true; files = [use];
+          lab.innerHTML = '<img src="' + URL.createObjectURL(use) + '" alt=""><span>Change image</span>';
+        })();
+      }
     });
     if (d.id) confirmButton($('#iDel'), 'Tap again to delete', async () => {
-      try { await S.store.remove('inspirations', d.id); if (d.image_path) S.store.removeImage(d.image_path).catch(() => {}); closeSheet(); await refresh(); toast('Deleted'); }
+      try { await S.store.remove('inspirations', d.id); if (d.image_path) S.store.removeImage(d.image_path, thumbOf(d.image_path)).catch(() => {}); closeSheet(); await refresh(); toast('Deleted'); }
       catch (ex) { toast('Could not delete. Check your connection and try again.'); }
     });
     $('#iForm').addEventListener('submit', async (e) => {
@@ -503,13 +676,13 @@
       try {
         if (d.id) {
           let path = d.image_path || null, old = null;
-          if (files[0]) { path = await S.store.upload(await prepareImage(files[0])); old = d.image_path; }
+          if (files[0]) { path = await uploadPhoto(files[0]._ready ? files[0] : await prepareImage(files[0])); old = d.image_path; }
           await S.store.save('inspirations', Object.assign({ id: d.id, image_path: path }, base));
-          if (old && old !== path) S.store.removeImage(old).catch(() => {});
+          if (old && old !== path) S.store.removeImage(old, thumbOf(old)).catch(() => {});
         } else if (files.length) {
           for (let k = 0; k < files.length; k++) {
             btn.textContent = files.length > 1 ? 'Uploading ' + (k + 1) + ' of ' + files.length + '…' : 'Uploading…';
-            const path = await S.store.upload(await prepareImage(files[k]));
+            const path = await uploadPhoto(files[k]._ready ? files[k] : await prepareImage(files[k]));
             await S.store.save('inspirations', Object.assign({ image_path: path }, base));
           }
         } else {
@@ -525,6 +698,50 @@
     });
   }
 
+  // ---------- photo helpers ----------
+  function photoBlock(u, inputId, emptyLabel) {
+    if (!u) return '<label class="photo-drop" for="' + inputId + '"><span>' + emptyLabel + '</span></label>';
+    return '<div class="photo-drop has"><img src="' + esc(u) + '" alt="">' +
+      '<div class="photo-actions"><button type="button" class="btn small" data-crop>Crop &amp; zoom</button>' +
+      '<label class="btn small" for="' + inputId + '">Change</label></div></div>';
+  }
+  async function makeThumb(blob) {
+    try {
+      const b = await createImageBitmap(blob);
+      const s = Math.min(1, 480 / Math.max(b.width, b.height));
+      const c = document.createElement('canvas'); c.width = Math.round(b.width * s); c.height = Math.round(b.height * s);
+      c.getContext('2d').drawImage(b, 0, 0, c.width, c.height);
+      return await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.82));
+    } catch (e) { return null; }
+  }
+  // Uploads the photo plus a small copy for thumbnails, so lists load fast.
+  async function uploadPhoto(blob) {
+    const path = await S.store.upload(blob);
+    const small = await makeThumb(blob);
+    if (small) await S.store.upload(small, thumbOf(path)).catch(() => {});
+    return path;
+  }
+  // Saves a tattoo; if the database has no "studio" column yet, saves without it.
+  async function saveTattooRow(row) {
+    try { return await S.store.save('tattoos', row); }
+    catch (ex) {
+      if (!/studio/i.test((ex && ex.message) || '')) throw ex;
+      const r = Object.assign({}, row); delete r.studio;
+      const saved = await S.store.save('tattoos', r);
+      if (row.studio) toast('Saved, but the studio needs a quick database update');
+      return saved;
+    }
+  }
+  function fitLabels(svg) {
+    svg.querySelectorAll('text.fit').forEach((t) => {
+      const max = parseFloat(t.dataset.max); if (!max || !t.getComputedTextLength) return;
+      let txt = t.textContent, guard = 0;
+      try {
+        while (t.getComputedTextLength() > max && txt.length > 2 && guard++ < 80) { txt = txt.slice(0, -1); t.textContent = txt.trimEnd() + '…'; }
+      } catch (e) { /* not rendered yet */ }
+    });
+  }
+
   // ---------- toast ----------
   let tt;
   function toast(msg) {
@@ -536,4 +753,6 @@
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   boot();
+  // Re-fit plate labels once the display font has loaded.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => renderPlate());
 })();
