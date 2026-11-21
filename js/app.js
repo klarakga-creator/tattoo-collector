@@ -33,7 +33,7 @@
   ];
   const zoneOf = (part) => { const r = regionOf(part); return ZONES.find((z) => z.regions.includes(r)) || ZONES[ZONES.length - 1]; };
   // Card colours: 'zone' (by body area, grouped head to toe) or 'mixed' (rotating colours).
-  const CARD_STYLE = (() => { const q = new URLSearchParams(location.search).get('cards'); if (q) return q; try { return localStorage.getItem('tc-cards') || 'mixed'; } catch (e) { return 'mixed'; } })();
+  const CARD_STYLE = (() => { const q = new URLSearchParams(location.search).get('cards'); if (q) return q; try { return localStorage.getItem('tc-cards') || 'zone'; } catch (e) { return 'zone'; } })();
   const regionLabel = (k) => (REGIONS.find((r) => r[0] === k) || REGIONS[REGIONS.length - 1])[1];
 
   const S = {
