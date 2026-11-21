@@ -481,14 +481,15 @@
     const t = S.tattoos.find((x) => x.id === id); if (!t) return;
     S.selected = id; renderPlate();
     const u = img(t.image_path), reg = regionOf(t.part), ideas = S.inspo.filter((i) => i.region === reg).length;
-    const facts = [['Artist', t.artist], ['Studio', t.studio], [t.status === 'planned' ? 'Target date' : 'Date', fmtDate(t.date)], ['Notes', t.notes]].filter((f) => f[1]);
+    const pain = t.status !== 'planned' && t.pain ? t.pain + ' / 10' : '';
+    const facts = [['Artist', t.artist], ['Studio', t.studio], ['Price', t.status !== 'planned' ? t.price : ''], ['Pain', pain], [t.status === 'planned' ? 'Target date' : 'Date', fmtDate(t.date)], ['Notes', t.notes]].filter((f) => f[1]);
     openSheet(
       '<div class="sheet-head"><span class="tag-pill"><i class="dot ' + (t.status === 'planned' ? 'planned' : 'have') + '"></i>' + (t.status === 'planned' ? 'Planned' : 'Inked') + '</span>' +
       '<button class="icon-btn" data-close aria-label="Close">✕</button></div>' +
       (u ? '<button class="detail-img" id="dImg" aria-label="Show full photo"><img src="' + esc(u) + '" alt="' + esc(t.name) + '"></button>' : '<div class="detail-noimg">No photo yet. Edit to add one.</div>') +
       '<h3 class="detail-name">' + esc(t.name || 'Untitled') + '</h3>' +
       '<div class="card-tags"><span class="tag-pill">' + esc(t.part || 'No body part set') + '</span><span class="tag-pill">' + VIEWS[t.view].label + ' view</span></div>' +
-      (facts.length ? '<dl class="facts">' + facts.map((f) => '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + '</dd></div>').join('') + '</dl>' : '') +
+      (facts.length ? '<dl class="facts">' + facts.map((f) => '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + (f[0] === 'Pain' ? painBar(t.pain) : '') + '</dd></div>').join('') + '</dl>' : '') +
       '<button class="link-btn" id="dIdeas">' + (ideas ? ideas + ' inspiration ' + (ideas === 1 ? 'idea' : 'ideas') : 'Inspiration') + ' for ' + regionLabel(reg).toLowerCase() + ' →</button>' +
       '<div class="form-actions"><button class="btn danger" id="dDel">Delete</button><span class="grow"></span><button class="btn" id="dMove">Move pin</button><button class="btn primary" id="dEdit">Edit</button></div>'
     );
@@ -555,8 +556,14 @@
       '<datalist id="partList">' + PARTS.map((p) => '<option value="' + p + '">').join('') + '</datalist></div>' +
       '<div class="field"><label for="tArtist">Artist</label><input id="tArtist" maxlength="80" autocomplete="off" placeholder="Who tattooed it" value="' + esc(d.artist) + '"></div>' +
       '<div class="field"><label for="tStudio">Studio</label><input id="tStudio" maxlength="80" autocomplete="off" placeholder="Where" value="' + esc(d.studio) + '"></div>' +
+      '<div id="tInked"' + (d.status === 'planned' ? ' hidden' : '') + '>' +
+      '<div class="field"><label for="tPrice">Price</label><input id="tPrice" maxlength="40" autocomplete="off" inputmode="text" placeholder="e.g. R2 500 or €350" value="' + esc(d.price) + '"></div>' +
+      '<fieldset class="field"><legend>Pain <span class="pain-val" id="tPainVal">' + (d.pain ? d.pain + ' / 10' : 'tap 1 to 10') + '</span></legend>' +
+      '<div class="pain-scale" role="group" aria-label="Pain out of 10">' +
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => '<button type="button" data-pain="' + n + '" aria-pressed="' + (d.pain === n) + '" class="' + (d.pain && n <= d.pain ? 'on' : '') + '">' + n + '</button>').join('') +
+      '</div></fieldset></div>' +
       '<div class="field"><label for="tDate">' + (d.status === 'planned' ? 'Target date' : 'Date') + '</label><input id="tDate" type="date" value="' + esc(d.date || '') + '"></div>' +
-      '<div class="field"><label for="tNotes">Notes</label><textarea id="tNotes" rows="3" placeholder="Meaning, size, healing, price…">' + esc(d.notes) + '</textarea></div>' +
+      '<div class="field"><label for="tNotes">Notes</label><textarea id="tNotes" rows="3" placeholder="Meaning, size, healing…">' + esc(d.notes) + '</textarea></div>' +
       '<p class="form-err" id="tErr" hidden></p>' +
       '<div class="form-actions"><button type="button" class="btn ghost" data-close>Cancel</button><span class="grow"></span><button type="submit" class="btn primary" id="tSave">Save tattoo</button></div>' +
       '</form>'
@@ -564,10 +571,26 @@
     const collect = () => {
       d.name = $('#tName').value.trim();
       d.status = ($('input[name=tStatus]:checked') || {}).value || 'have';
-      d.artist = $('#tArtist').value.trim(); d.studio = $('#tStudio').value.trim(); d.date = $('#tDate').value; d.notes = $('#tNotes').value.trim();
+      d.artist = $('#tArtist').value.trim(); d.studio = $('#tStudio').value.trim(); d.price = $('#tPrice').value.trim(); d.date = $('#tDate').value; d.notes = $('#tNotes').value.trim();
       d.part = $('#tPart').value.trim();
     };
     $('#tPart').addEventListener('input', () => { d.partAuto = false; });
+    // Price and pain only apply to tattoos she already has.
+    document.querySelectorAll('input[name=tStatus]').forEach((r) => r.addEventListener('change', () => {
+      const planned = ($('input[name=tStatus]:checked') || {}).value === 'planned';
+      $('#tInked').hidden = planned;
+      $('label[for=tDate]').textContent = planned ? 'Target date' : 'Date';
+    }));
+    $('.pain-scale').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-pain]'); if (!b) return;
+      const n = parseInt(b.dataset.pain, 10);
+      d.pain = d.pain === n ? null : n;
+      $('.pain-scale').querySelectorAll('[data-pain]').forEach((x) => {
+        const v = parseInt(x.dataset.pain, 10);
+        x.setAttribute('aria-pressed', String(v === d.pain)); x.classList.toggle('on', !!d.pain && v <= d.pain);
+      });
+      $('#tPainVal').textContent = d.pain ? d.pain + ' / 10' : 'tap 1 to 10';
+    });
     const showPhoto = () => { $('#tPhotoBox').innerHTML = photoBlock(d._preview || img(d.image_path), 'tPhoto', 'Add a photo'); wireCrop(); };
     const cropFrom = async (src) => {
       const out = await window.Cropper.open(src);
@@ -592,7 +615,7 @@
       try {
         let path = d.image_path || null, old = null;
         if (d._file) { btn.textContent = 'Uploading photo…'; path = await uploadPhoto(d._ready ? d._file : await prepareImage(d._file)); old = d.image_path; }
-        const row = { name: d.name || 'Untitled', status: d.status, view: d.view, x: d.x, y: d.y, part: d.part, artist: d.artist, studio: d.studio || '', date: d.date || null, notes: d.notes, image_path: path };
+        const row = { name: d.name || 'Untitled', status: d.status, view: d.view, x: d.x, y: d.y, part: d.part, artist: d.artist, studio: d.studio || '', price: d.status === 'planned' ? '' : (d.price || ''), pain: d.status === 'planned' ? null : (d.pain || null), date: d.date || null, notes: d.notes, image_path: path };
         if (d.id) row.id = d.id;
         const saved = await saveTattooRow(row);
         if (old && old !== path) S.store.removeImage(old, thumbOf(old)).catch(() => {});
@@ -721,16 +744,29 @@
     if (small) await S.store.upload(small, thumbOf(path)).catch(() => {});
     return path;
   }
-  // Saves a tattoo; if the database has no "studio" column yet, saves without it.
+  // Saves a tattoo. If the database is missing a newer column (studio, price, pain),
+  // saves without it and says a quick database update is needed.
+  const EXTRA_COLS = ['studio', 'price', 'pain'];
   async function saveTattooRow(row) {
-    try { return await S.store.save('tattoos', row); }
-    catch (ex) {
-      if (!/studio/i.test((ex && ex.message) || '')) throw ex;
-      const r = Object.assign({}, row); delete r.studio;
-      const saved = await S.store.save('tattoos', r);
-      if (row.studio) toast('Saved, but the studio needs a quick database update');
-      return saved;
+    const r = Object.assign({}, row), dropped = [];
+    for (let i = 0; i <= EXTRA_COLS.length; i++) {
+      try {
+        const saved = await S.store.save('tattoos', r);
+        if (dropped.some((c) => row[c])) toast('Saved, but ' + dropped.join(' and ') + ' need a quick database update');
+        return saved;
+      } catch (ex) {
+        const msg = (ex && ex.message) || '';
+        const col = EXTRA_COLS.find((c) => c in r && new RegExp("'" + c + "'|\\b" + c + '\\b', 'i').test(msg));
+        if (!col) throw ex;
+        delete r[col]; dropped.push(col);
+      }
     }
+  }
+  function painBar(n) {
+    if (!n) return '';
+    let h = '<span class="pain-bar" aria-hidden="true">';
+    for (let i = 1; i <= 10; i++) h += '<i' + (i <= n ? ' class="on"' : '') + '></i>';
+    return h + '</span>';
   }
   function fitLabels(svg) {
     svg.querySelectorAll('text.fit').forEach((t) => {

@@ -317,3 +317,13 @@ body.placing .body-main { position: static; max-width: 720px; margin: 0 auto; }
 body.placing .plate-head { display: none; }
 body.placing .plate { padding-top: 8px; }
 body.placing #plate { max-height: calc(100vh - 210px); max-height: calc(100dvh - 210px); }
+
+/* Pain scale, 1 to 10 */
+.pain-val { font: 500 0.72rem var(--mono); color: var(--text-2); margin-left: 6px; text-transform: none; letter-spacing: 0; }
+.pain-scale { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+.pain-scale button { border: 0; min-height: 40px; padding: 0; border-radius: 12px; background: var(--surface-2); color: var(--text-2); font: 600 1rem/1 var(--head); }
+.pain-scale button.on { background: var(--coral); color: var(--black); }
+.pain-scale button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--text) inset; }
+.pain-bar { display: flex; gap: 3px; margin-top: 8px; }
+.pain-bar i { flex: 1; height: 6px; border-radius: 3px; background: var(--surface); }
+.pain-bar i.on { background: var(--coral); }

@@ -12,6 +12,8 @@ create table if not exists public.tattoos (
   part text not null default '',
   artist text not null default '',
   studio text not null default '',
+  price text not null default '',
+  pain smallint check (pain between 1 and 10),
   date date,
   notes text not null default '',
   image_path text,
@@ -21,6 +23,10 @@ create table if not exists public.tattoos (
 
 -- Added later: separate studio field (safe to run again).
 alter table public.tattoos add column if not exists studio text not null default '';
+
+-- Added later: price and pain scale for tattoos you have (safe to run again).
+alter table public.tattoos add column if not exists price text not null default '';
+alter table public.tattoos add column if not exists pain smallint check (pain between 1 and 10);
 
 create table if not exists public.inspirations (
   id uuid primary key default gen_random_uuid(),

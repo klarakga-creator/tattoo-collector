@@ -1,6 +1,6 @@
 // Offline-first shell: open instantly from cache, update in the background.
 // Your data never goes through this cache; it always comes live from Supabase.
-const CACHE = 'tc-v4';
+const CACHE = 'tc-v5';
 const SHELL = ['./', 'index.html', 'css/style.css', 'config.js', 'vendor/supabase.js', 'js/figure.js', 'js/cropper.js', 'js/store.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/favicon-32.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {

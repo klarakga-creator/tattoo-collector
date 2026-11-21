@@ -120,7 +120,7 @@
     const images = { 'demo/rose': sampleArt(350, 'rose'), 'demo/moon': sampleArt(220, 'moon'), 'demo/wave': sampleArt(200, 'wave'), 'demo/script': sampleArt(30, 'script') };
     const data = {
       tattoos: [
-        { id: id(), name: 'Fine-line rose', status: 'have', view: 'front', x: 0.80, y: 0.47, part: 'Left forearm', artist: 'Example studio', date: '2023-05-14', notes: 'Example entry. Your own tattoos will replace these.', image_path: 'demo/rose', created_at: now() },
+        { id: id(), name: 'Fine-line rose', status: 'have', view: 'front', x: 0.80, y: 0.47, part: 'Left forearm', artist: 'Example studio', price: '€250', pain: 4, date: '2023-05-14', notes: 'Example entry. Your own tattoos will replace these.', image_path: 'demo/rose', created_at: now() },
         { id: id(), name: 'Crescent moon', status: 'have', view: 'back', x: 0.5, y: 0.158, part: 'Nape', artist: '', date: '2021-09-02', notes: 'Example entry.', image_path: 'demo/moon', created_at: now() },
         { id: id(), name: 'Amor fati', status: 'have', view: 'front', x: 0.37, y: 0.355, part: 'Right ribs', artist: '', date: '', notes: 'Example entry.', image_path: 'demo/script', created_at: now() },
         { id: id(), name: 'Wave band', status: 'planned', view: 'right', x: 0.51, y: 0.912, part: 'Right ankle', artist: '', date: '', notes: 'Example of a planned piece.', image_path: 'demo/wave', created_at: now() },
