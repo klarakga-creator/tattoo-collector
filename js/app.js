@@ -268,6 +268,8 @@
   // dir: 1 = new view comes in from the right, -1 = from the left. from: how far the figure was already dragged.
   function setView(v, dir) {
     const prev = S.view;
+    closePicker();
+    if (prev !== v && !S.placing && S.zoom.s > 1.001) S.zoom = { s: 1, cx: 0, cy: 0 };
     S.view = v;
     $$('#viewSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
     const svg = $('#plate');
@@ -291,7 +293,7 @@
     const step = (d) => VIEW_ORDER[(VIEW_ORDER.indexOf(S.view) + d + VIEW_ORDER.length) % VIEW_ORDER.length];
     let x0 = 0, y0 = 0, t0 = 0, dx = 0, mode = null;
     plate.addEventListener('touchstart', (e) => {
-      if (S.placing || e.touches.length !== 1 || e.target.closest('.zoom-ctl')) { mode = 'skip'; return; }
+      if (S.placing || S.zoom.s > 1.001 || e.touches.length !== 1 || e.target.closest('.zoom-ctl, .pick-pop')) { mode = 'skip'; return; }
       x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); dx = 0; mode = null;
     }, { passive: true });
     plate.addEventListener('touchmove', (e) => {
@@ -326,7 +328,7 @@
     plate.addEventListener('click', (e) => { if (Math.abs(dx) > 8) { e.stopPropagation(); e.preventDefault(); dx = 0; } }, true);
     let wheelLock = 0, acc = 0;
     plate.addEventListener('wheel', (e) => {
-      if (S.placing || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      if (S.placing || e.ctrlKey || S.zoom.s > 1.001 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
       e.preventDefault();
       if (Date.now() < wheelLock) return;
       acc += e.deltaX;
@@ -394,7 +396,7 @@
       let text, hx, hy, hw, hh;
       if (narrow) {
         text = '<text class="lb-name fit" data-max="' + (figX - 10) + '" x="' + cx + '" y="' + (cy + r + 28) + '" text-anchor="middle">' + name + '</text>';
-        hw = figX - 4; hx = cx - hw / 2; hy = cy - r - 8; hh = 2 * r + 46;
+        hw = figX - 4; hx = cx - hw / 2; hy = cy - r - 4; hh = 62;
       } else {
         const tx = leftCol ? cx - r - 12 : cx + r + 12, anchor = leftCol ? 'end' : 'start';
         text = '<text class="lb-name fit" data-max="' + ((leftCol ? tx : W - tx) - 18) + '" x="' + tx + '" y="' + (cy + 9) + '" text-anchor="' + anchor + '">' + name + '</text>';
@@ -447,7 +449,7 @@
     const v = VIEWS[S.view];
     const here = items.length, planned = items.filter((i) => i.t.status === 'planned').length;
     const plate = $('.plate');
-    plate.className = 'plate v-' + S.view + (S.placing ? ' placing' : '');
+    plate.className = 'plate v-' + S.view + (S.placing ? ' placing' : '') + (S.zoom.s > 1.001 ? ' zoomed' : '');
     $('#viewFig').textContent = v.fig + ' · ' + v.name;
     $('#viewTitle').textContent = v.label;
     $('#viewCount').textContent = S.loaded ? here + (here === 1 ? ' piece' : ' pieces') + (planned ? ' · ' + planned + ' planned' : '') : 'Loading…';
@@ -475,8 +477,54 @@
 
   function onPlateClick(e) {
     if (S.placing) return; // placing uses pointer gestures below
-    const g = e.target.closest('[data-id]');
-    if (g) openDetail(g.dataset.id);
+    if (e.target.closest('.zoom-ctl, .pick-pop')) return;
+    closePicker();
+    // Names sit apart down the sides, so a tap on one is always clear.
+    const lab = e.target.closest('.label[data-id]');
+    if (lab) { openDetail(lab.dataset.id); return; }
+    // On the body, look at every pin near the finger; if there are several, ask which one.
+    const near = pinsNear(e.clientX, e.clientY, 30);
+    if (near.length === 1) openDetail(near[0]);
+    else if (near.length > 1) showPicker(near, e.clientX, e.clientY);
+  }
+  function pinsNear(x, y, radius) {
+    const svg = $('#plate'), ctm = svg.getScreenCTM(), g = S.geo; if (!ctm || !g) return [];
+    const fw = F.FIG_W * g.sc, hits = [];
+    visible().filter((t) => t.view === S.view).forEach((t) => {
+      let best = Infinity;
+      spotsOf(t).forEach((q) => {
+        const sx = (g.figX + q.x * fw) * ctm.a + ctm.e, sy = (g.figY + q.y * F.FIG_H * g.sc) * ctm.d + ctm.f;
+        best = Math.min(best, Math.hypot(sx - x, sy - y));
+      });
+      if (best <= radius) hits.push({ id: t.id, d: best });
+    });
+    return hits.sort((a, b) => a.d - b.d).map((h) => h.id);
+  }
+  function closePicker() { const el = $('.pick-pop'); if (el) el.remove(); }
+  function showPicker(ids, x, y) {
+    closePicker();
+    const el = document.createElement('div');
+    el.className = 'pick-pop'; el.setAttribute('role', 'menu'); el.setAttribute('aria-label', 'Which tattoo?');
+    el.innerHTML = '<p class="eyebrow">Which one?</p>' + ids.map((id) => {
+      const t = S.tattoos.find((q) => q.id === id), z = zoneOf(t.part), u = thumb(t.image_path);
+      return '<button type="button" role="menuitem" data-pick="' + esc(id) + '">' +
+        (u ? '<img src="' + esc(u) + '" alt="">' : '<span class="pick-dot tone-' + z.tone + '"></span>') +
+        '<span class="pick-txt"><b>' + esc(t.name || 'Untitled') + '</b>' + (t.part ? '<small>' + esc(t.part) + '</small>' : '') + '</span></button>';
+    }).join('');
+    document.body.appendChild(el);
+    // Keep it on screen and clear of the bottom bar: below the finger if it fits, otherwise above.
+    const nav = $('.bottom-nav'), navTop = nav && nav.offsetParent ? nav.getBoundingClientRect().top : window.innerHeight;
+    const w = el.offsetWidth, h = el.offsetHeight, bottom = Math.min(window.innerHeight, navTop) - 10;
+    let ly = y + 22; if (ly + h > bottom) ly = y - h - 22;
+    ly = Math.max(10, Math.min(bottom - h, ly));
+    el.style.left = Math.max(10, Math.min(window.innerWidth - w - 10, x - w / 2)) + 'px';
+    el.style.top = ly + 'px';
+    window.addEventListener('scroll', closePicker, { once: true, passive: true });
+    S.selected = null; renderPlate();
+    el.addEventListener('click', (e) => { const b = e.target.closest('[data-pick]'); if (b) { closePicker(); openDetail(b.dataset.pick); } });
+    setTimeout(() => document.addEventListener('pointerdown', function off(e) {
+      if (!e.target.closest('.pick-pop')) { closePicker(); document.removeEventListener('pointerdown', off, true); }
+    }, true), 0);
   }
   $('#plate') && $('#plate').addEventListener('keydown', (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-id]')) { e.preventDefault(); openDetail(e.target.closest('[data-id]').dataset.id); }
@@ -486,7 +534,8 @@
   function applyZoom() {
     const svg = $('#plate'), g = S.geo; if (!svg || !g) return;
     const z = S.zoom;
-    if (!S.placing || z.s <= 1.001) { svg.setAttribute('viewBox', '0 0 ' + g.W + ' ' + g.H); return; }
+    $('.plate').classList.toggle('zoomed', z.s > 1.001);
+    if (z.s <= 1.001) { svg.setAttribute('viewBox', '0 0 ' + g.W + ' ' + g.H); return; }
     const w = g.W / z.s, h = g.H / z.s;
     z.cx = Math.min(g.W - w / 2, Math.max(w / 2, z.cx));
     z.cy = Math.min(g.H - h / 2, Math.max(h / 2, z.cy));
@@ -541,7 +590,13 @@
     const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     const toSvg = (cx, cy) => svgPoint({ clientX: cx, clientY: cy });
     svg.addEventListener('pointerdown', (e) => {
-      if (!S.placing) return;
+      if (!S.placing) {
+        // Browsing: two fingers zoom, and one finger moves around once zoomed in.
+        pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pts.size === 1) { downAt = { x: e.clientX, y: e.clientY }; moved = false; }
+        if (pts.size === 2) { const v = Array.from(pts.values()); pinch = { d: dist(v[0], v[1]), s: S.zoom.s }; moved = true; closePicker(); }
+        return;
+      }
       e.preventDefault();
       try { svg.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -567,9 +622,20 @@
       }
     });
     svg.addEventListener('pointermove', (e) => {
-      if (!S.placing || !pts.has(e.pointerId)) return;
+      if (!pts.has(e.pointerId)) return;
       const prev = pts.get(e.pointerId), cur = { x: e.clientX, y: e.clientY };
       pts.set(e.pointerId, cur);
+      if (!S.placing) {
+        if (pts.size === 2 && pinch) {
+          const v = Array.from(pts.values());
+          const want = pinch.s * dist(v[0], v[1]) / pinch.d;
+          if (Math.abs(want - S.zoom.s) > 0.02) setZoom(want, toSvg((v[0].x + v[1].x) / 2, (v[0].y + v[1].y) / 2));
+        } else if (pts.size === 1 && S.zoom.s > 1.001) {
+          if (Math.hypot(cur.x - downAt.x, cur.y - downAt.y) > 6) moved = true;
+          if (moved) { const k = (S.geo.W / S.zoom.s) / svg.clientWidth; S.zoom.cx -= (cur.x - prev.x) * k; S.zoom.cy -= (cur.y - prev.y) * k; applyZoom(); closePicker(); }
+        }
+        return;
+      }
       if (pts.size === 1) {
         if (Math.hypot(cur.x - downAt.x, cur.y - downAt.y) > 6) moved = true;
         if (!moved) return;
@@ -586,7 +652,12 @@
       }
     });
     const up = (e) => {
-      if (!S.placing) { pts.clear(); return; }
+      if (!S.placing) {
+        pts.delete(e.pointerId); if (pts.size < 2) pinch = null;
+        // A drag to move around shouldn't also count as a tap on a tattoo.
+        if (moved) { const stop = (ev) => { ev.stopPropagation(); ev.preventDefault(); }; svg.addEventListener('click', stop, { capture: true, once: true }); setTimeout(() => svg.removeEventListener('click', stop, true), 350); moved = false; }
+        return;
+      }
       if (pts.size === 1 && pts.has(e.pointerId) && !moved && e.type === 'pointerup') {
         const p = toSvg(e.clientX, e.clientY);
         const first = S.placing.draft.x == null || S.placing.draft.view !== S.view;
@@ -601,8 +672,9 @@
     svg.addEventListener('pointerup', up);
     svg.addEventListener('pointercancel', up);
     svg.addEventListener('wheel', (e) => {
-      if (!S.placing) return;
-      e.preventDefault();
+      // Browsing: only a trackpad pinch (or ctrl + scroll) zooms; normal scrolling still scrolls the page.
+      if (!S.placing && !e.ctrlKey) return;
+      e.preventDefault(); closePicker();
       setZoom(S.zoom.s * Math.exp(-e.deltaY * 0.0025), svgPoint(e));
     }, { passive: false });
   }
