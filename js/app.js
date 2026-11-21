@@ -592,22 +592,44 @@
       return;
     }
     const tones = ['coral', 'ink', 'mustard', 'violet', 'mint'];
+    if (S.openCard && !list.some((t) => t.id === S.openCard)) S.openCard = null;
     $('#list').innerHTML = list.map((t, k) => {
-      const u = thumb(t.image_path), planned = t.status === 'planned';
-      return '<button class="card tone-' + tones[k % tones.length] + '" data-open="' + esc(t.id) + '">' +
-        '<span class="card-top">' +
+      const u = thumb(t.image_path), planned = t.status === 'planned', open = S.openCard === t.id;
+      const facts = [['Artist', t.artist], ['Studio', t.studio], [planned ? 'Target date' : 'Date', fmtDate(t.date)],
+        ['Price', planned ? '' : t.price], ['Pain', !planned && t.pain ? t.pain + ' / 10' : '']].filter((f) => f[1]);
+      return '<article class="card tone-' + tones[k % tones.length] + (open ? ' open' : '') + '" data-card="' + esc(t.id) + '">' +
+        '<div class="card-top" data-toggle>' +
         (u ? '<img src="' + esc(u) + '" alt="" decoding="async" class="ph" data-p="' + esc(t.image_path) + '">' : '<span class="noimg">' + esc((t.name || '?').charAt(0).toUpperCase()) + '</span>') +
         '<span class="card-name">' + esc(t.name || 'Untitled') + '</span>' +
-        '<span class="arrow" aria-hidden="true">↗</span></span>' +
+        '<button class="arrow" type="button" aria-expanded="' + open + '" aria-label="' + (open ? 'Hide' : 'Show') + ' details for ' + esc(t.name || 'Untitled') + '">↗</button></div>' +
+        '<div class="card-more"><div class="card-more-in">' +
         '<span class="card-tags"><span class="tag-pill"><i class="dot ' + (planned ? 'planned' : 'have') + '"></i>' + (planned ? 'Planned' : 'Inked') + '</span>' +
         (t.part ? '<span class="tag-pill">' + esc(t.part) + '</span>' : '') +
-        '<span class="tag-pill">' + VIEWS[t.view].label + '</span></span></button>';
+        '<span class="tag-pill">' + VIEWS[t.view].label + '</span></span>' +
+        (facts.length ? '<dl class="card-facts">' + facts.map((f) => '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + '</dd></div>').join('') + '</dl>' : '') +
+        '<div class="card-btns"><button type="button" class="btn small" data-show="' + esc(t.id) + '">Show on body</button>' +
+        '<button type="button" class="btn small solid" data-open="' + esc(t.id) + '">Open details</button></div>' +
+        '</div></div></article>';
     }).join('');
     markLoaded($('#list'));
+    // Tap a card (or its arrow) to slide it open; the cards below move down to make room.
+    $$('#list [data-toggle]').forEach((el) => el.addEventListener('click', () => {
+      const card = el.closest('.card'), id = card.dataset.card, opening = S.openCard !== id;
+      S.openCard = opening ? id : null;
+      $$('#list .card').forEach((c) => {
+        const on = c.dataset.card === S.openCard;
+        c.classList.toggle('open', on);
+        const a = $('.arrow', c); a.setAttribute('aria-expanded', String(on));
+      });
+    }));
+    $$('#list [data-show]').forEach((b) => b.addEventListener('click', () => {
+      const t = S.tattoos.find((x) => x.id === b.dataset.show);
+      setView(t.view); S.selected = t.id; renderPlate();
+      if (window.innerWidth < 900) $('.plate').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
     $$('#list [data-open]').forEach((b) => b.addEventListener('click', () => {
       const t = S.tattoos.find((x) => x.id === b.dataset.open);
       setView(t.view);
-      if (window.innerWidth < 900) $('.plate').scrollIntoView({ behavior: 'smooth', block: 'start' });
       openDetail(t.id);
     }));
   }
