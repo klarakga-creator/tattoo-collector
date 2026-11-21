@@ -339,3 +339,9 @@ img.ph.in { opacity: 1; }
 #page-inspo { position: relative; }
 #page-inspo.drop-over::after { content: 'Drop to save as inspiration'; position: fixed; inset: 12px; z-index: 30; display: grid; place-items: center; border: 3px dashed var(--mustard); border-radius: 28px; background: rgba(27,27,29,.88); color: var(--mustard); font: 700 1.6rem var(--head); text-transform: uppercase; letter-spacing: .04em; pointer-events: none; }
 .photo-drop.over { border-color: var(--mustard); color: var(--mustard); background: rgba(242,191,75,.1); }
+
+/* Body labels: a tappable dot with the tattoo's name. */
+.lb-dot { fill: var(--black); stroke: var(--black); stroke-width: 3; }
+.label.planned .lb-dot { fill: var(--pbg, transparent); stroke-dasharray: 5 4; }
+.label.sel .lb-dot { stroke: var(--cream); stroke-width: 4; }
+.label:focus-visible .lb-dot { stroke: var(--cream); stroke-width: 5; }

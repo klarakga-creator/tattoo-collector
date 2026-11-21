@@ -1,6 +1,6 @@
 // Offline-first shell: open instantly from cache, update in the background.
 // Your tattoo list always comes live from Supabase; photos are kept on the device once seen.
-const CACHE = 'tc-v10';
+const CACHE = 'tc-v11';
 const PHOTOS = 'tc-photos-v1'; // your photos, kept on this device after the first view
 const SHELL = ['./', 'index.html', 'css/style.css', 'config.js', 'vendor/supabase.js', 'js/figure.js', 'js/swipe.js', 'js/cropper.js', 'js/store.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/favicon-32.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });

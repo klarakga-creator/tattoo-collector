@@ -271,18 +271,19 @@
     S.geo = { W, H, sc, figX, figY, narrow };
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
 
-    const r = 32;
+    const r = 11; // label dot
     const items = visible().filter((t) => t.view === S.view).map((t) => ({ t, px: figX + t.x * fw, py: figY + t.y * F.FIG_H * sc }));
     const L = items.filter((i) => i.t.x < 0.5), R = items.filter((i) => i.t.x >= 0.5);
     [L, R].forEach((col) => col.forEach((i) => { i.target = narrow ? i.py - 26 : i.py; }));
-    if (narrow) { layoutColumn(L, r + 12, H - r - 70, 118); layoutColumn(R, r + 12, H - r - 70, 118); }
-    else { layoutColumn(L, 50, H - 50, 92); layoutColumn(R, 50, H - 50, 92); }
+    // A dot with the tattoo's name: compact, so labels don't crowd each other.
+    if (narrow) { layoutColumn(L, 30, H - 50, 64); layoutColumn(R, 30, H - 50, 64); }
+    else { layoutColumn(L, 30, H - 30, 46); layoutColumn(R, 30, H - 30, 46); }
 
     let lines = '', labels = '', pins = '';
     const place = (it, leftCol) => {
       const t = it.t, sel = S.selected === t.id, planned = t.status === 'planned';
       const cy = it.ly;
-      const cx = narrow ? (leftCol ? figX / 2 + 2 : W - figX / 2 - 2) : (leftCol ? figX - 56 : figX + fw + 56);
+      const cx = narrow ? (leftCol ? figX / 2 + 2 : W - figX / 2 - 2) : (leftCol ? figX - 40 : figX + fw + 40);
       const ang = Math.atan2(it.py - cy, it.px - cx);
       const ex = cx + Math.cos(ang) * (r + 5), ey = cy + Math.sin(ang) * (r + 5);
       const cls = (planned ? 'planned' : 'have') + (sel ? ' sel' : '');
@@ -290,25 +291,20 @@
       lines += '<line class="lead ' + cls + '" ' + seg + '/><line class="lead-in ' + cls + '" clip-path="url(#onBody)" ' + seg + '/>';
       pins += '<g class="pin ' + cls + '" data-id="' + esc(t.id) + '"><circle class="hitarea" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="20"/>' +
         '<circle class="dot" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="' + (sel ? 11 : 8.5) + '"/></g>';
-      const u = thumb(t.image_path);
-      const thumbEl = u
-        ? '<image href="' + esc(u) + '" x="' + (cx - r) + '" y="' + (cy - r) + '" width="' + 2 * r + '" height="' + 2 * r + '" preserveAspectRatio="xMidYMid slice" clip-path="url(#circ)"/>'
-        : '<text class="initial" x="' + cx + '" y="' + (cy + 11) + '" text-anchor="middle">' + esc((t.name || '?').trim().charAt(0).toUpperCase()) + '</text>';
-      let text;
+      const name = esc((t.name || 'Untitled').toUpperCase());
+      let text, hx, hy, hw, hh;
       if (narrow) {
-        const mw = figX - 12;
-        text = '<text class="lb-name fit" data-max="' + mw + '" x="' + cx + '" y="' + (cy + r + 32) + '" text-anchor="middle">' + esc((t.name || 'Untitled').toUpperCase()) + '</text>' +
-          '<text class="lb-part fit" data-max="' + mw + '" x="' + cx + '" y="' + (cy + r + 56) + '" text-anchor="middle">' + esc(t.part || '') + '</text>';
+        text = '<text class="lb-name fit" data-max="' + (figX - 10) + '" x="' + cx + '" y="' + (cy + r + 28) + '" text-anchor="middle">' + name + '</text>';
+        hw = figX - 4; hx = cx - hw / 2; hy = cy - r - 8; hh = 2 * r + 46;
       } else {
-        const tx = leftCol ? cx - r - 14 : cx + r + 14, anchor = leftCol ? 'end' : 'start';
-        const mw = (leftCol ? tx : W - tx) - 18;
-        text = '<text class="lb-name fit" data-max="' + mw + '" x="' + tx + '" y="' + (cy + 2) + '" text-anchor="' + anchor + '">' + esc((t.name || 'Untitled').toUpperCase()) + '</text>' +
-          '<text class="lb-part fit" data-max="' + mw + '" x="' + tx + '" y="' + (cy + 26) + '" text-anchor="' + anchor + '">' + esc(t.part || '') + '</text>';
+        const tx = leftCol ? cx - r - 12 : cx + r + 12, anchor = leftCol ? 'end' : 'start';
+        text = '<text class="lb-name fit" data-max="' + ((leftCol ? tx : W - tx) - 18) + '" x="' + tx + '" y="' + (cy + 9) + '" text-anchor="' + anchor + '">' + name + '</text>';
+        hw = 260; hx = leftCol ? cx + r + 6 - hw : cx - r - 6; hy = cy - 22; hh = 44;
       }
       labels += '<g class="label ' + cls + '" data-id="' + esc(t.id) + '" tabindex="0" role="button" aria-label="' + esc((t.name || 'Untitled') + ', ' + (t.part || '')) + '">' +
-        '<rect class="hitarea" x="' + (narrow ? cx - 100 : (leftCol ? cx - 250 : cx - r - 6)) + '" y="' + (cy - r - 6) + '" width="' + (narrow ? 200 : 256) + '" height="' + (narrow ? 2 * r + 76 : 2 * r + 12) + '"/>' +
-        '<circle class="thumb-bg" cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>' + thumbEl +
-        '<circle class="thumb-ring" cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>' + text + '</g>';
+        '<title>' + esc((t.name || 'Untitled') + (t.part ? ' · ' + t.part : '')) + '</title>' +
+        '<rect class="hitarea" x="' + hx + '" y="' + hy + '" width="' + hw + '" height="' + hh + '"/>' +
+        '<circle class="lb-dot" cx="' + cx + '" cy="' + cy + '" r="' + (sel ? r + 3 : r) + '"/>' + text + '</g>';
     };
     L.forEach((i) => place(i, true)); R.forEach((i) => place(i, false));
 
