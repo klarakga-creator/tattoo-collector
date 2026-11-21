@@ -195,6 +195,7 @@
       if (location.hash === '#inspiration') openInspoForm({ region: S.region === 'all' ? 'anywhere' : S.region, link: '', note: '' });
       else newTattoo();
     });
+    wirePageDrop();
     $('#addInspo').addEventListener('click', () => openInspoForm({ region: S.region === 'all' ? 'anywhere' : S.region, link: '', note: '' }));
     $('#cancelPlace').addEventListener('click', () => {
       const p = S.placing; stopPlacing();
@@ -738,12 +739,54 @@
     $$('#inspoGrid [data-edit]').forEach((b) => b.addEventListener('click', () => openInspoForm(Object.assign({}, S.inspo.find((x) => x.id === b.dataset.edit)))));
   }
 
-  function openInspoForm(d) {
+  // ---------- drag and drop (Mac) ----------
+  const CAN_DRAG = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
+  const DROP_FAIL = 'That image couldn’t be added. Save it to your Mac first, then drag the file in.';
+  // Files from Finder, or an image dragged from a web page (fetched when the site allows it).
+  async function droppedImages(dt) {
+    if (!dt) return [];
+    const files = Array.from(dt.files || []).filter((f) => /^image\//.test(f.type) || /\.(heic|heif|jpe?g|png|gif|webp)$/i.test(f.name || ''));
+    if (files.length) return files;
+    let url = '';
+    const html = dt.getData('text/html');
+    const m = html && html.match(/<img[^>]+src=["']([^"']+)["']/i);
+    if (m) url = m[1].replace(/&amp;/g, '&');
+    if (!url) url = (dt.getData('text/uri-list') || dt.getData('text/plain') || '').split('\n').find((l) => /^(https?:|data:image)/.test(l.trim())) || '';
+    url = url.trim();
+    if (!url) return [];
+    try {
+      const r = await fetch(url, { mode: 'cors', credentials: 'omit' });
+      const b = await r.blob();
+      if (r.ok && /^image\//.test(b.type)) return [new File([b], 'dropped.' + (b.type.split('/')[1] || 'jpg'), { type: b.type })];
+    } catch (e) { /* the site doesn't allow it */ }
+    return [];
+  }
+  function wirePageDrop() {
+    const page = $('#page-inspo'); if (!page) return;
+    let depth = 0;
+    const has = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).some((t) => t === 'Files' || t === 'text/uri-list' || t === 'text/html');
+    const open = () => !$('#sheetWrap').hidden;
+    page.addEventListener('dragenter', (e) => { if (!has(e) || open()) return; e.preventDefault(); depth++; page.classList.add('drop-over'); });
+    page.addEventListener('dragover', (e) => { if (!has(e) || open()) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    page.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) page.classList.remove('drop-over'); });
+    page.addEventListener('drop', async (e) => {
+      if (open()) return;
+      e.preventDefault(); depth = 0; page.classList.remove('drop-over');
+      const got = await droppedImages(e.dataTransfer);
+      if (!got.length) { toast(DROP_FAIL); return; }
+      openInspoForm({ region: S.region === 'all' ? 'anywhere' : S.region, link: '', note: '' }, got);
+    });
+    // Stop the browser from opening a photo dropped just outside a drop area.
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => e.preventDefault());
+  }
+
+  function openInspoForm(d, dropped) {
     const u = img(d.image_path);
     openSheet(
       '<div class="sheet-head"><h3>' + (d.id ? 'Edit inspiration' : 'Save inspiration') + '</h3><button class="icon-btn" data-close aria-label="Close">✕</button></div>' +
       '<form id="iForm" class="form" novalidate>' +
-      '<label class="photo-drop' + (u ? ' has' : '') + '" for="iPhoto">' + (u ? '<img src="' + esc(u) + '" alt="">' : '') + '<span>' + (u ? 'Change image' : (d.id ? 'Add an image' : 'Add images (you can pick several)')) + '</span></label>' +
+      '<label class="photo-drop' + (u ? ' has' : '') + '" for="iPhoto">' + (u ? '<img src="' + esc(u) + '" alt="">' : '') + '<span>' + (u ? 'Change image' : (d.id ? 'Add an image' : (CAN_DRAG ? 'Add images or drag them here' : 'Add images (you can pick several)'))) + '</span></label>' +
       '<input type="file" id="iPhoto" accept="image/*" class="visually-hidden"' + (d.id ? '' : ' multiple') + '>' +
       '<div class="field"><label for="iRegion">Body part</label><select id="iRegion">' + REGIONS.map((r) => '<option value="' + r[0] + '"' + (r[0] === d.region ? ' selected' : '') + '>' + r[1] + '</option>').join('') + '</select></div>' +
       '<div class="field"><label for="iLink">Link (optional)</label><input id="iLink" type="url" inputmode="url" placeholder="https://instagram.com/…" value="' + esc(d.link) + '"></div>' +
@@ -753,8 +796,10 @@
       '<span class="grow"></span><button type="submit" class="btn primary" id="iSave">Save</button></div></form>'
     );
     let files = [];
-    $('#iPhoto').addEventListener('change', (e) => {
-      files = Array.from(e.target.files || []); if (!files.length) return;
+    const useFiles = (list) => {
+      files = Array.from(list || []).filter((f) => /^image\//.test(f.type) || /\.(heic|heif|jpe?g|png|gif|webp)$/i.test(f.name || ''));
+      if (!files.length) return;
+      if (d.id && files.length > 1) files = files.slice(0, 1);
       const lab = $('.photo-drop'); lab.classList.add('has');
       lab.innerHTML = '<img src="' + URL.createObjectURL(files[0]) + '" alt=""><span>' + (files.length > 1 ? files.length + ' images selected' : 'Change image') + '</span>';
       if (files.length === 1) {
@@ -765,7 +810,18 @@
           lab.innerHTML = '<img src="' + URL.createObjectURL(use) + '" alt=""><span>Change image</span>';
         })();
       }
+    };
+    $('#iPhoto').addEventListener('change', (e) => useFiles(e.target.files));
+    // Drag photos from Finder or a web page straight onto the image box.
+    const zone = $('.photo-drop');
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); zone.classList.add('over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+    zone.addEventListener('drop', async (e) => {
+      e.preventDefault(); e.stopPropagation(); zone.classList.remove('over');
+      const got = await droppedImages(e.dataTransfer);
+      if (got.length) useFiles(got); else toast(DROP_FAIL);
     });
+    if (dropped && dropped.length) useFiles(dropped);
     if (d.id) confirmButton($('#iDel'), 'Tap again to delete', async () => {
       try { await S.store.remove('inspirations', d.id); if (d.image_path) S.store.removeImage(d.image_path, thumbOf(d.image_path)).catch(() => {}); closeSheet(); await refresh(); toast('Deleted'); }
       catch (ex) { toast('Could not delete. Check your connection and try again.'); }

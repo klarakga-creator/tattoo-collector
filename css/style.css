@@ -334,3 +334,8 @@ img.ph.in { opacity: 1; }
 .card img.ph { background: rgba(0,0,0,.18); }
 .inspo-img img.ph { display: block; width: 100%; height: auto; }
 .detail-img { min-height: 120px; }
+
+/* Drag and drop on the Inspiration page (Mac). */
+#page-inspo { position: relative; }
+#page-inspo.drop-over::after { content: 'Drop to save as inspiration'; position: fixed; inset: 12px; z-index: 30; display: grid; place-items: center; border: 3px dashed var(--mustard); border-radius: 28px; background: rgba(27,27,29,.88); color: var(--mustard); font: 700 1.6rem var(--head); text-transform: uppercase; letter-spacing: .04em; pointer-events: none; }
+.photo-drop.over { border-color: var(--mustard); color: var(--mustard); background: rgba(242,191,75,.1); }
