@@ -29,6 +29,10 @@ create table if not exists public.inspirations (
   updated_at timestamptz not null default now()
 );
 
+-- Let signed-in users use the tables (row-level security below still limits them to their own rows).
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.tattoos, public.inspirations to authenticated;
+
 -- Only you can see or change your own rows.
 alter table public.tattoos enable row level security;
 alter table public.inspirations enable row level security;
