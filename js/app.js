@@ -908,21 +908,32 @@
   // Ideas categories slide left or right, like the body views.
   const REGION_ORDER = ['all'].concat(REGIONS.map((r) => r[0]));
   let regionAnim = null;
-  function setRegion(k, dir) {
+  // The current ideas glide off one side while the next ones glide in from the other.
+  // from: how far the grid was already dragged by a finger, so the motion carries on from there.
+  function setRegion(k, dir, from) {
     const prev = S.region; if (k === prev) return;
-    S.region = k;
     if (dir == null) dir = REGION_ORDER.indexOf(k) > REGION_ORDER.indexOf(prev) ? 1 : -1;
     const grid = $('#inspoGrid');
-    grid.style.transform = ''; grid.style.opacity = '';
-    renderInspo();
-    const chip = $('#regionChips [aria-pressed="true"]');
-    if (chip && chip.scrollIntoView) chip.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
-    if (reduceMotion || !grid.animate) return;
-    if (regionAnim) regionAnim.cancel();
-    const w = Math.min(120, grid.clientWidth * 0.22);
-    regionAnim = grid.animate([{ transform: 'translateX(' + (dir * w) + 'px)', opacity: 0 }, { transform: 'translateX(0)', opacity: 1 }],
-      { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
-    regionAnim.onfinish = () => { regionAnim = null; };
+    const chipTo = () => { const chip = $('#regionChips [aria-pressed="true"]'); if (chip && chip.scrollIntoView) chip.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest', inline: 'center' }); };
+    if (regionAnim) { regionAnim.cancel(); regionAnim = null; }
+    if (reduceMotion || !grid.animate) { S.region = k; grid.style.transform = ''; renderInspo(); chipTo(); return; }
+    const W = Math.max(160, grid.clientWidth * 0.45), x0 = from || 0;
+    grid.style.transform = '';
+    S.region = k;
+    // Update the category pills straight away so the row moves with the swipe.
+    $$('#regionChips .chip').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.region === k)));
+    chipTo();
+    const outMs = Math.round(120 + 140 * (1 - Math.min(1, Math.abs(x0) / W)));
+    regionAnim = grid.animate([{ transform: 'translate3d(' + x0 + 'px,0,0)', opacity: 1 }, { transform: 'translate3d(' + (-dir * W) + 'px,0,0)', opacity: 0 }],
+      { duration: outMs, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+    const outAnim = regionAnim;
+    regionAnim.onfinish = () => {
+      renderInspo();
+      regionAnim = grid.animate([{ transform: 'translate3d(' + (dir * W * 0.6) + 'px,0,0)', opacity: 0 }, { transform: 'translate3d(0,0,0)', opacity: 1 }],
+        { duration: 380, easing: 'cubic-bezier(.16,1,.3,1)' });
+      outAnim.cancel();
+      regionAnim.onfinish = () => { regionAnim = null; };
+    };
   }
   function wireRegionSwipe() {
     const page = $('#page-inspo'), grid = $('#inspoGrid');
@@ -945,8 +956,7 @@
       dx = mx;
       // At the first or last category, give a little resistance instead of moving freely.
       const d = dx < 0 ? 1 : -1, edge = step(d) === S.region;
-      grid.style.transform = 'translateX(' + dx * (edge ? 0.2 : 0.6) + 'px)';
-      grid.style.opacity = String(1 - Math.min(0.5, Math.abs(dx) / 600));
+      grid.style.transform = 'translate3d(' + (edge ? dx * 0.25 : dx) + 'px,0,0)';
     }, { passive: false });
     const end = () => {
       if (mode !== 'swipe') { mode = null; return; }
@@ -954,8 +964,8 @@
       setTimeout(() => { dx = 0; }, 400);
       const d = dx < 0 ? 1 : -1, next = step(d);
       const fast = Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.4;
-      if (next !== S.region && (Math.abs(dx) > 60 || (fast && Math.abs(dx) > 25))) { grid.style.transform = ''; setRegion(next, d); }
-      else if (grid.animate) { const a = grid.animate([{ transform: grid.style.transform }, { transform: 'translateX(0)' }], { duration: 180, easing: 'ease-out' }); grid.style.transform = ''; a.onfinish = () => {}; }
+      if (next !== S.region && (Math.abs(dx) > 60 || (fast && Math.abs(dx) > 25))) setRegion(next, d, dx);
+      else if (grid.animate) { const a = grid.animate([{ transform: grid.style.transform }, { transform: 'translate3d(0,0,0)' }], { duration: 320, easing: 'cubic-bezier(.16,1,.3,1)' }); grid.style.transform = ''; a.onfinish = () => {}; }
       else grid.style.transform = '';
     };
     page.addEventListener('touchend', end); page.addEventListener('touchcancel', end);
