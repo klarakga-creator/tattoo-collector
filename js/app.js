@@ -396,7 +396,7 @@
       let text, hx, hy, hw, hh;
       if (narrow) {
         text = '<text class="lb-name fit" data-max="' + (figX - 10) + '" x="' + cx + '" y="' + (cy + r + 28) + '" text-anchor="middle">' + name + '</text>';
-        hw = figX - 4; hx = cx - hw / 2; hy = cy - r - 4; hh = 62;
+        hw = figX - 4; hx = cx - hw / 2; hy = cy - r - (BIG_NAME_TARGETS ? 4 : 8); hh = BIG_NAME_TARGETS ? 62 : 2 * r + 46;
       } else {
         const tx = leftCol ? cx - r - 12 : cx + r + 12, anchor = leftCol ? 'end' : 'start';
         text = '<text class="lb-name fit" data-max="' + ((leftCol ? tx : W - tx) - 18) + '" x="' + tx + '" y="' + (cy + 9) + '" text-anchor="' + anchor + '">' + name + '</text>';
@@ -479,6 +479,8 @@
     if (S.placing) return; // placing uses pointer gestures below
     if (e.target.closest('.zoom-ctl, .pick-pop')) return;
     closePicker();
+    // Held back until Klara approves: the "Which one?" picker. Without it, a tap opens what was hit.
+    if (!TAP_PICKER) { const g = e.target.closest('[data-id]'); if (g) openDetail(g.dataset.id); return; }
     // Names sit apart down the sides, so a tap on one is always clear.
     const lab = e.target.closest('.label[data-id]');
     if (lab) { openDetail(lab.dataset.id); return; }
@@ -487,6 +489,7 @@
     if (near.length === 1) openDetail(near[0]);
     else if (near.length > 1) showPicker(near, e.clientX, e.clientY);
   }
+  const TAP_PICKER = false, BIG_NAME_TARGETS = false;
   function pinsNear(x, y, radius) {
     const svg = $('#plate'), ctm = svg.getScreenCTM(), g = S.geo; if (!ctm || !g) return [];
     const fw = F.FIG_W * g.sc, hits = [];
