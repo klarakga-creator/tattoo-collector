@@ -385,3 +385,13 @@ img.ph.in { opacity: 1; }
 .card.zone-first { margin-top: 0 !important; }
 .card:has(+ .zone-head) { padding-bottom: 12px; }
 .card.open:has(+ .zone-head) { padding-bottom: 18px; }
+
+/* Emphasis on one tattoo (Show on body): it grows, the rest shrink and fade. */
+#plate .label, #plate .pin, #plate .lead, #plate .lead-in, #plate .lead-joint { transform-box: fill-box; transform-origin: center; transition: transform .45s cubic-bezier(.32,.72,0,1), opacity .35s ease; }
+#plate.noanim .label, #plate.noanim .pin, #plate.noanim .lead, #plate.noanim .lead-in { transition: none; }
+#plate.emph .label.sel { transform: scale(1.2); }
+#plate.emph .pin.sel { transform: scale(1.35); }
+#plate.emph .label:not(.sel) { transform: scale(.85); opacity: .45; }
+#plate.emph .pin:not(.sel) { transform: scale(.8); opacity: .5; }
+#plate.emph .lead:not(.sel), #plate.emph .lead-in:not(.sel) { opacity: .3; }
+@media (prefers-reduced-motion: reduce) { #plate .label, #plate .pin, #plate .lead, #plate .lead-in { transition: none; } }

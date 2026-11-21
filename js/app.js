@@ -222,6 +222,10 @@
     wirePlateGestures();
     wireViewSwipe();
     $('#plate').addEventListener('click', onPlateClick);
+    $('#plate').addEventListener('click', (e) => {
+      if (S.placing || !S.selected || !$('#sheetWrap').hidden || e.target.closest('.label, .pin, .zoom-ctl')) return;
+      S.selected = null; renderPlate();
+    });
     $('#signOut').addEventListener('click', async () => { try { localStorage.removeItem(CACHE_KEY); } catch (e) { /* ignore */ } await S.store.signOut(); location.reload(); });
     $('#sheetWrap').addEventListener('click', (e) => { if (e.target.matches('.scrim') || e.target.closest('[data-close]')) closeSheet(); });
     $('#lightbox').addEventListener('click', () => { $('#lightbox').hidden = true; });
@@ -426,7 +430,21 @@
     $('#viewFig').textContent = v.fig + ' · ' + v.name;
     $('#viewTitle').textContent = v.label;
     $('#viewCount').textContent = S.loaded ? here + (here === 1 ? ' piece' : ' pieces') + (planned ? ' · ' + planned + ' planned' : '') : 'Loading…';
+    emphasise();
   }
+  // The selected tattoo grows a little while the others shrink and fade, so it stands out.
+  let emphWas = null;
+  function emphasise() {
+    const svg = $('#plate'); if (!svg) return;
+    const id = !S.placing && S.selected && S.tattoos.some((t) => t.id === S.selected && t.view === S.view) ? S.selected : null;
+    const fresh = id !== emphWas; emphWas = id;
+    svg.classList.toggle('noanim', !fresh);
+    if (!id) { svg.classList.remove('emph'); return; }
+    if (!fresh || reduceMotionPlate) { svg.classList.add('emph'); return; }
+    svg.classList.remove('emph');
+    requestAnimationFrame(() => requestAnimationFrame(() => svg.classList.add('emph')));
+  }
+  const reduceMotionPlate = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function svgPoint(e) {
     const svg = $('#plate'), pt = svg.createSVGPoint();
