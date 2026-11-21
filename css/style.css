@@ -309,3 +309,11 @@ body.placing .bottom-nav { display: none; }
 .crop-ratios { justify-content: center; }
 .radio-seg label { position: relative; }
 .radio-seg input { left: 0; top: 0; width: 1px; height: 1px; margin: 0; }
+
+/* Pin placement is its own focused screen: just the body, the views and the controls. */
+body.placing .top, body.placing .banner, body.placing .collection, body.placing .foot { display: none !important; }
+body.placing .body-page { display: block; }
+body.placing .body-main { position: static; max-width: 720px; margin: 0 auto; }
+body.placing .plate-head { display: none; }
+body.placing .plate { padding-top: 8px; }
+body.placing #plate { max-height: calc(100vh - 210px); max-height: calc(100dvh - 210px); }

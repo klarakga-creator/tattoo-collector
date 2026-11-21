@@ -405,7 +405,7 @@
     renderPlate();
     // Start zoomed in on an existing pin so it's easy to nudge.
     const gp = ghostPoint(); if (gp) setZoom(2.2, gp);
-    $('.body-main').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.scrollTo(0, 0);
   }
   function stopPlacing() {
     S.placing = null; S.zoom = { s: 1, cx: 0, cy: 0 };
