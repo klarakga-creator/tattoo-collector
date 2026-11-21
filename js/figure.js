@@ -1,11 +1,14 @@
-// Anatomical figure drawing + body-part guessing.
-// Figure coordinate space: 300 wide x 840 tall, centre line at x = 150.
+// Bold flat figure drawing + body-part guessing.
+// Figure space: 340 wide x 840 tall, centre line at x = 170.
+// Style: one solid black silhouette, organic exaggerated shapes (small head,
+// long neck, big hands and feet), with thin background-colour cuts for detail.
 (function () {
   'use strict';
-  const FIG_W = 300, FIG_H = 840;
+  const FIG_W = 340, FIG_H = 840, C = 170;
 
   const r1 = (v) => Math.round(v * 10) / 10;
   const mir = (p) => [FIG_W - p[0], p[1]];
+  const abs = (pts) => pts.map((p) => [C + p[0], p[1]]);
 
   // Catmull-Rom spline through points, as cubic Bezier path data.
   function curve(pts, closed) {
@@ -22,141 +25,93 @@
     return d + (closed ? 'Z' : '');
   }
 
-  // Right half of the front/back silhouette, head top -> crotch.
-  const HALF = [
-    [150, 16], [168, 20], [181, 32], [187, 50], [188, 72], [186, 94], [181, 112], [174, 124], [167, 134],
-    [166, 148], [168, 162],
-    [176, 168], [196, 175], [214, 182],
-    [226, 192], [233, 208], [235, 228],
-    [236, 252], [238, 278], [241, 304],
-    [244, 328],
-    [248, 354], [252, 382], [255, 408], [256, 428],
-    [262, 442], [267, 462], [268, 484], [263, 502], [255, 510], [248, 504], [245, 488], [242, 468], [240, 450],
-    [238, 432], [233, 404], [227, 374], [222, 346],
-    [219, 326], [216, 300], [212, 272], [208, 250], [203, 236],
-    [199, 248], [198, 272], [195, 298], [190, 322], [187, 342],
-    [190, 362], [198, 386], [206, 412], [210, 438],
-    [211, 468], [208, 504], [203, 540], [198, 568],
-    [195, 592], [194, 612],
-    [197, 640], [198, 672], [193, 706], [186, 740], [182, 764],
-    [184, 784], [191, 800], [197, 812], [192, 822], [174, 824], [163, 818], [162, 800],
-    [163, 780], [163, 756], [161, 720], [160, 686], [162, 650], [163, 620],
-    [162, 592], [160, 562], [158, 530], [156, 496], [154, 470], [150, 458]
-  ];
+  // Right half of the front/back silhouette as offsets from the centre line,
+  // head top -> down the arm and big hand -> down the curvy side -> foot -> crotch.
+  const HALF = abs([
+    [0, 42], [18, 45], [30, 58], [33, 78], [27, 97], [15, 109], [7, 116],
+    [7, 126], [8, 140],
+    [24, 150], [46, 157], [64, 168], [75, 186],
+    [81, 212], [87, 250], [93, 290], [101, 330], [108, 368], [112, 396], [114, 412],
+    // thumb
+    [124, 419], [139, 427], [149, 437], [151, 446], [143, 451], [129, 448], [121, 450],
+    [124, 466], [130, 482],
+    // four fingers
+    [135, 500], [138, 522], [136, 540], [129, 547], [123, 539], [122, 515], [120, 504],
+    [118, 517], [119, 541], [115, 559], [108, 562], [104, 548], [105, 519], [103, 505],
+    [102, 519], [100, 541], [95, 553], [89, 551], [88, 534], [91, 512], [90, 503],
+    [87, 513], [83, 529], [77, 533], [74, 524], [77, 504], [82, 486],
+    [89, 466], [95, 440], [98, 416],
+    // inner arm back up to the armpit
+    [95, 380], [87, 340], [79, 300], [71, 262], [63, 232], [57, 220],
+    // torso side: chest, waist, wide hips
+    [53, 238], [55, 272], [47, 304], [39, 330], [38, 348], [48, 378], [60, 416], [65, 454], [65, 492],
+    [61, 534], [57, 576],
+    [53, 606], [52, 632],
+    [58, 668], [57, 708], [49, 748], [44, 770],
+    // big foot
+    [50, 784], [68, 792], [86, 802], [93, 815], [84, 826], [52, 829], [28, 827], [19, 816], [20, 796],
+    [22, 776], [20, 740], [18, 700], [20, 660], [21, 628], [19, 600], [15, 560], [11, 522], [7, 492], [0, 480]
+  ]);
   const FULL = HALF.concat(HALF.slice(1, -1).reverse().map(mir));
   const BODY_D = curve(FULL, true);
 
-  // Profile silhouette facing right (we see her right side).
+  // Profile facing right (we see her right side).
   const SIDE = [
-    [150, 16], [166, 20], [178, 30], [185, 46], [187, 64], [189, 74], [195, 86], [190, 92], [191, 100], [188, 106],
-    [189, 112], [184, 118], [183, 126], [176, 132], [166, 134],
-    [164, 146], [166, 162], [172, 178], [178, 198], [186, 218], [194, 240], [193, 256], [184, 268], [175, 276],
-    [174, 300], [176, 330], [181, 360], [184, 384], [180, 410], [176, 436], [178, 472], [175, 510], [171, 548],
-    [170, 578], [171, 600], [168, 620],
-    [166, 654], [164, 700], [160, 744], [158, 768], [164, 784], [184, 798], [200, 810], [198, 820], [150, 822],
-    [134, 820], [130, 806], [132, 786], [134, 768],
-    [137, 736], [141, 700], [145, 664], [143, 630], [137, 602], [136, 572], [135, 536], [132, 500], [128, 470],
-    [122, 448], [118, 424], [120, 400], [127, 376], [131, 350], [129, 318], [124, 286], [121, 250], [123, 214],
-    [127, 190], [133, 170], [136, 152],
-    [132, 136], [124, 122], [118, 100], [116, 76], [120, 52], [130, 32], [140, 21]
+    [172, 44], [192, 50], [204, 64], [208, 80], [215, 91], [208, 97], [209, 104], [204, 112], [197, 118], [186, 121],
+    [184, 133], [186, 148], [195, 164], [212, 188], [227, 212], [228, 236], [214, 249], [204, 257],
+    [206, 290], [214, 330], [216, 362], [210, 390], [214, 422], [216, 470], [209, 520], [201, 570],
+    [198, 600], [196, 622], [197, 662], [193, 712], [187, 752], [185, 770],
+    [201, 781], [227, 791], [245, 803], [249, 817], [237, 827], [172, 829], [157, 822], [155, 806], [160, 782],
+    [158, 760], [151, 730], [147, 690], [151, 650], [157, 620], [157, 590], [151, 550], [143, 512],
+    [131, 480], [118, 448], [115, 414], [123, 388], [135, 360], [139, 330], [135, 290], [127, 250], [125, 210], [131, 180],
+    [141, 160], [149, 141], [145, 125], [139, 104], [139, 78], [149, 57], [160, 47]
   ];
-  // Widen the profile to realistic body depth (head a little less than torso).
-  const sxAt = (y) => (y < 130 ? 1.22 : y < 170 ? 1.22 + (0.23 * (y - 130)) / 40 : 1.45);
-  const widen = (p) => [150 + (p[0] - 150) * sxAt(p[1]), p[1]];
-  const narrowX = (x, y) => 150 + (x - 150) / sxAt(y);
-  const SIDE_D = curve(SIDE.map(widen), true);
+  const SIDE_D = curve(SIDE, true);
   const ARM = [
-    [136, 186], [150, 178], [166, 186], [171, 206], [170, 236], [168, 268], [166, 300], [165, 330], [166, 360],
-    [167, 392], [166, 420], [166, 440], [170, 456], [171, 478], [166, 498], [156, 506], [146, 500], [143, 484],
-    [144, 462], [146, 442], [142, 420], [140, 392], [138, 362], [137, 332], [134, 300], [131, 266], [129, 232],
-    [130, 206]
+    [151, 172], [167, 158], [185, 166], [192, 192], [190, 232], [188, 272], [190, 312], [195, 352], [199, 392], [200, 412],
+    [210, 424], [224, 434], [233, 444], [231, 452], [219, 451], [212, 452],
+    [215, 474], [213, 500], [206, 516], [196, 520], [186, 511], [181, 490], [180, 460], [183, 432], [183, 412],
+    [178, 372], [171, 332], [166, 296], [160, 258], [155, 220], [150, 192]
   ];
-  const ARM_D = curve(ARM.map((p) => [150 + (p[0] - 150) * 1.3, p[1]]), true);
+  const ARM_D = curve(ARM, true);
 
-  const line = (pts, cls) => '<path class="' + (cls || 'd') + '" d="' + curve(pts, false) + '"/>';
-  const pair = (pts, cls) => line(pts, cls) + line(pts.map(mir), cls);
-  const ell = (cx, cy, rx, ry, cls) =>
-    '<ellipse class="' + (cls || 'd') + '" cx="' + cx + '" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '"/>';
-  const ellPair = (cx, cy, rx, ry, cls) => ell(cx, cy, rx, ry, cls) + ell(FIG_W - cx, cy, rx, ry, cls);
+  // Thin background-colour cuts (the "negative space" lines).
+  const cut = (pts) => '<path class="cut" d="' + curve(pts, false) + '"/>';
+  const cutPair = (pts) => cut(pts) + cut(pts.map(mir));
+  const dot = (x, y, r) => '<circle class="cut-dot" cx="' + x + '" cy="' + y + '" r="' + r + '"/>';
+  const bun = (x, y) => '<circle class="ink" cx="' + x + '" cy="' + y + '" r="17"/>';
 
-  const EAR = [[186, 70], [191, 76], [191, 90], [186, 96]];
-
-  function frontDetails() {
+  function frontCuts() {
     return [
-      pair([[156, 170], [172, 168], [192, 173], [214, 181]]),
-      pair([[163, 130], [160, 150], [154, 166]], 'd faint'),
-      line([[144, 173], [150, 177], [156, 173]]),
-      pair([[158, 262], [166, 276], [182, 280], [196, 270], [200, 252]]),
-      pair([[214, 188], [221, 210], [224, 234]], 'd faint'),
-      pair([[193, 368], [184, 396], [168, 424]]),
-      pair([[202, 452], [193, 500], [184, 546], [180, 572]], 'd faint'),
-      ellPair(178, 602, 9, 12, 'd faint'),
-      pair([[176, 632], [175, 690], [172, 742]], 'd faint'),
-      pair([[225, 328], [233, 331]]),
-      pair(EAR),
-      line([[150, 290], [150, 336]], 'd faint'),
-      ell(150, 352, 2.5, 4)
+      cutPair(abs([[6, 262], [16, 276], [32, 278], [44, 266]])),
+      dot(C, 352, 3.2)
+    ].join('');
+  }
+  function backCuts() {
+    return [
+      cut(abs([[0, 168], [0, 260], [0, 330], [0, 400]])),
+      cutPair(abs([[12, 214], [30, 226], [40, 250]])),
+      cut(abs([[0, 430], [0, 470]])),
+      cutPair(abs([[4, 486], [26, 496], [50, 488]])),
+      cutPair(abs([[30, 612], [44, 612]]))
     ].join('');
   }
 
-  function backDetails() {
-    return [
-      line([[150, 150], [150, 420]], 'd spine'),
-      pair([[160, 206], [178, 200], [194, 210], [194, 236], [176, 262], [162, 258]]),
-      pair([[160, 140], [170, 162], [200, 176]], 'd faint'),
-      ellPair(141, 412, 2.5, 2.5),
-      line([[150, 428], [150, 466]]),
-      pair([[154, 474], [172, 482], [194, 474]]),
-      pair([[170, 598], [186, 597]]),
-      pair([[192, 640], [186, 690]], 'd faint'),
-      pair([[166, 640], [168, 690]], 'd faint'),
-      pair([[238, 326], [242, 334]]),
-      pair([[188, 72], [190, 84], [187, 94]])
-    ].join('');
-  }
-
-  const W = (pts) => pts.map(widen);
-  const WA = (pts) => pts.map((p) => [150 + (p[0] - 150) * 1.3, p[1]]);
-  function sideDetails() {
-    return [
-      ell(r1(widen([140, 82])[0]), 82, 7, 12),
-      line(W([[178, 350], [176, 356]])),
-      line(W([[124, 462], [136, 470]])),
-      line(W([[167, 598], [163, 610]]), 'd faint'),
-      ell(r1(widen([147, 772])[0]), 772, 3, 3, 'd faint'),
-      line(W([[124, 215], [128, 245]]), 'd faint')
-    ].join('');
-  }
-  function armDetails() {
-    return [
-      line(WA([[136, 222], [150, 236], [168, 228]]), 'd faint'),
-      line(WA([[164, 330], [158, 334]]))
-    ].join('');
-  }
-
-  // Returns SVG markup in figure coordinates. Ids let the app hit-test taps.
+  // SVG for a view, in figure coordinates. Ids let the app hit-test taps.
   function markup(view) {
     if (view === 'front' || view === 'back') {
-      return (
-        '<clipPath id="clipBody"><path d="' + BODY_D + '"/></clipPath>' +
-        '<path class="body" id="bodyPath" d="' + BODY_D + '"/>' +
-        '<path class="rim" clip-path="url(#clipBody)" d="' + BODY_D + '"/>' +
-        '<path class="outline" d="' + BODY_D + '"/>' +
-        (view === 'front' ? frontDetails() : backDetails())
-      );
+      return bun(C, 34) + '<path class="ink" id="bodyPath" d="' + BODY_D + '"/>' + (view === 'front' ? frontCuts() : backCuts());
     }
-    const s =
-      '<clipPath id="clipBody"><path d="' + SIDE_D + '"/></clipPath>' +
-      '<clipPath id="clipArm"><path d="' + ARM_D + '"/></clipPath>' +
-      '<path class="body" id="bodyPath" d="' + SIDE_D + '"/>' +
-      '<path class="rim" clip-path="url(#clipBody)" d="' + SIDE_D + '"/>' +
-      '<path class="outline" d="' + SIDE_D + '"/>' +
-      sideDetails() +
-      '<path class="body" id="armPath" d="' + ARM_D + '"/>' +
-      '<path class="rim" clip-path="url(#clipArm)" d="' + ARM_D + '"/>' +
-      '<path class="outline" d="' + ARM_D + '"/>' +
-      armDetails();
-    return view === 'left' ? '<g transform="translate(300 0) scale(-1 1)">' + s + '</g>' : s;
+    const s = bun(148, 50) + '<path class="ink" id="bodyPath" d="' + SIDE_D + '"/>' +
+      cut([[136, 470], [148, 486]]) +
+      '<path class="ink arm" id="armPath" d="' + ARM_D + '"/>';
+    return view === 'left' ? '<g transform="translate(' + FIG_W + ' 0) scale(-1 1)">' + s + '</g>' : s;
+  }
+
+  // Path data (figure coords) that covers the body in a view: used to clip leader lines.
+  function clipPaths(view) {
+    if (view === 'front' || view === 'back') return [BODY_D];
+    return [SIDE_D, ARM_D];
   }
 
   // Hit-test a point (figure coords, un-mirrored) against a path by id.
@@ -173,56 +128,55 @@
   // Best guess of a body-part name for a tap at figure coords (fx, fy) in a view.
   function guessPart(view, fx, fy) {
     const lateral = view === 'left' || view === 'right';
-    let x = view === 'left' ? FIG_W - fx : fx;
-    const y = fy, dx = x - 150, ax = Math.abs(dx);
+    const x = view === 'left' ? FIG_W - fx : fx;
+    const y = fy, dx = x - C, ax = Math.abs(dx);
     let side = '';
     if (view === 'front') side = dx > 3 ? 'Left' : dx < -3 ? 'Right' : '';
     else if (view === 'back') side = dx > 3 ? 'Right' : dx < -3 ? 'Left' : '';
     else side = view === 'left' ? 'Left' : 'Right';
     const P = (n) => (side ? side + ' ' + n.toLowerCase() : n);
-    const armPart = (yy) => yy < 232 ? 'Shoulder' : yy < 316 ? 'Upper arm' : yy < 342 ? 'Elbow' : yy < 424 ? 'Forearm' : yy < 442 ? 'Wrist' : 'Hand';
-    const legPart = (yy, rear) => yy < 580 ? (rear ? 'Back of thigh' : 'Thigh') : yy < 622 ? (rear ? 'Back of knee' : 'Knee') :
-      yy < 762 ? (rear ? 'Calf' : 'Shin') : yy < 790 ? 'Ankle' : (rear ? 'Heel' : 'Foot');
+    const armPart = (yy) => yy < 210 ? 'Shoulder' : yy < 310 ? 'Upper arm' : yy < 346 ? 'Elbow' : yy < 408 ? 'Forearm' : yy < 426 ? 'Wrist' : 'Hand';
+    const legPart = (yy, rear) => yy < 592 ? (rear ? 'Back of thigh' : 'Thigh') : yy < 636 ? (rear ? 'Back of knee' : 'Knee') :
+      yy < 764 ? (rear ? 'Calf' : 'Shin') : yy < 786 ? 'Ankle' : (rear ? 'Heel' : 'Foot');
     const back = view === 'back';
 
-    if (y < 136) {
-      if (lateral && y > 56 && y < 112 && narrowX(x, y) > 124 && narrowX(x, y) < 150) return P('Behind the ear');
+    if (y < 118) {
+      if (lateral && y > 60 && y < 108 && x < 166) return P('Behind the ear');
       return back ? 'Back of head' : 'Head';
     }
-    if (y < 172) {
-      if (back || (lateral && narrowX(x, y) < 142)) return ax < 14 && !lateral ? 'Nape' : P('Neck');
-      return ax < 12 && !lateral ? 'Throat' : P('Neck');
+    if (y < 152) {
+      if (back) return ax < 12 ? 'Nape' : P('Neck');
+      if (lateral) return x < 160 ? P('Nape') : P('Neck');
+      return ax < 10 ? 'Throat' : P('Neck');
     }
     if (lateral) {
       if (hit('armPath', x, y)) return P(armPart(y));
-      x = narrowX(x, y);
-      const front = x > 158, rear = x < 138;
-      if (y < 215) return front ? P('Collarbone') : rear ? 'Upper back' : P('Shoulder');
-      if (y < 280) return front ? P('Chest') : rear ? P('Shoulder blade') : P('Ribs');
+      const front = x > 186, rear = x < 152;
+      if (y < 200) return front ? P('Collarbone') : rear ? 'Upper back' : P('Shoulder');
+      if (y < 262) return front ? P('Chest') : rear ? P('Shoulder blade') : P('Ribs');
       if (y < 330) return rear ? 'Mid back' : P('Ribs');
       if (y < 400) return front ? 'Stomach' : rear ? 'Lower back' : P('Side');
-      if (y < 450) return front ? P('Hip') : rear ? P('Glute') : P('Hip');
-      if (y < 480 && x < 136) return P('Glute');
-      return P(legPart(y, x < 146));
+      if (y < 476) return front ? P('Hip') : rear ? P('Glute') : P('Hip');
+      return P(legPart(y, x < 172));
     }
-    const armThresh = y < 300 ? 55 : y < 360 ? 47 : y < 450 ? 63 : 66;
-    if (y < 236 && ax > 44) return P('Shoulder');
-    if (y >= 236 && y < 520 && ax > armThresh) return P(armPart(y));
+    const armThresh = y < 300 ? 59 : y < 360 ? 54 : 70;
+    if (y < 206 && ax > 40) return P('Shoulder');
+    if (y >= 206 && y < 570 && ax > armThresh) return P(armPart(y));
     if (!back) {
-      if (y < 218) return P('Collarbone');
-      if (y < 282) return ax < 13 ? 'Sternum' : P('Chest');
-      if (y < 330) return ax < 16 ? 'Sternum' : P('Ribs');
-      if (y < 392) return ax > 34 ? P('Side') : 'Stomach';
-      if (y < 455) return ax > 30 ? P('Hip') : 'Lower stomach';
+      if (y < 200) return P('Collarbone');
+      if (y < 282) return ax < 10 ? 'Sternum' : P('Chest');
+      if (y < 330) return ax < 14 ? 'Sternum' : P('Ribs');
+      if (y < 392) return ax > 30 ? P('Side') : 'Stomach';
+      if (y < 476) return ax > 30 ? P('Hip') : 'Lower stomach';
     } else {
-      if (y < 218) return ax < 12 ? 'Spine' : 'Upper back';
-      if (y < 290) return ax < 10 ? 'Spine' : P('Shoulder blade');
-      if (y < 360) return ax < 10 ? 'Spine' : ax > 34 ? P('Ribs') : 'Mid back';
+      if (y < 205) return ax < 12 ? 'Spine' : 'Upper back';
+      if (y < 285) return ax < 9 ? 'Spine' : P('Shoulder blade');
+      if (y < 360) return ax < 9 ? 'Spine' : ax > 30 ? P('Ribs') : 'Mid back';
       if (y < 425) return 'Lower back';
-      if (y < 478) return P('Glute');
+      if (y < 500) return P('Glute');
     }
     return P(legPart(y, back));
   }
 
-  window.Figure = { FIG_W, FIG_H, markup, hit, guessPart };
+  window.Figure = { FIG_W, FIG_H, markup, clipPaths, hit, guessPart };
 })();

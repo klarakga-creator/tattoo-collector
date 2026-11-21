@@ -5,18 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Tattoo Collector</title>
 <meta name="description" content="A personal atlas of my tattoos, planned pieces and inspiration.">
-<meta name="theme-color" content="#eef0ec" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#11151c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#1b1b1d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Tattoos">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Libre+Caslon+Display&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -36,57 +35,60 @@
 <div id="app" class="app">
   <header class="top">
     <div class="brand">
-      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17"/><circle cx="20" cy="20" r="5"/><path d="M20 3v8M20 29v8M3 20h8M29 20h8"/></svg>
-      <div><h1>Tattoo Collector</h1><p class="sub">Atlas of ink · plates I–IV</p></div>
+      <p class="eyebrow">Atlas of ink</p>
+      <h1>Tattoo<br>Collector</h1>
     </div>
-    <nav class="tabs" aria-label="Pages">
-      <a href="#body" aria-current="true">Body</a>
-      <a href="#inspiration">Inspiration</a>
-    </nav>
+    <div class="top-actions">
+      <nav class="tabs" aria-label="Pages">
+        <a href="#body" aria-current="true">Body</a>
+        <a href="#inspiration">Inspiration</a>
+      </nav>
+      <button class="round-add" id="addTattoo" aria-label="Add tattoo">+</button>
+    </div>
   </header>
 
-  <p id="demoBanner" class="banner" hidden>Preview mode with example tattoos. Nothing you add here is saved until the app is connected to your account.</p>
+  <p id="demoBanner" class="banner" hidden>Preview with example tattoos. Try adding your own, but nothing is saved yet: it resets when you reload.</p>
   <p id="offline" class="banner warn" hidden>Can’t reach your collection right now. It will refresh when you’re back online.</p>
 
   <main>
-    <section id="page-body">
-      <div class="toolbar">
-        <div class="seg" id="viewSeg" role="group" aria-label="View">
+    <section id="page-body" class="body-page">
+      <div class="body-main">
+        <div class="pills" id="viewSeg" role="group" aria-label="View">
           <button data-view="front" aria-pressed="true">Front<span class="n"></span></button>
           <button data-view="back" aria-pressed="false">Back<span class="n"></span></button>
           <button data-view="left" aria-pressed="false">Left<span class="n"></span></button>
           <button data-view="right" aria-pressed="false">Right<span class="n"></span></button>
         </div>
-        <div class="toolbar-row">
-          <div class="seg small" id="filterSeg" role="group" aria-label="Show">
-            <button data-filter="all" aria-pressed="true">All <span id="cAll" class="c">0</span></button>
-            <button data-filter="have" aria-pressed="false"><i class="key have"></i>Inked <span id="cHave" class="c">0</span></button>
-            <button data-filter="planned" aria-pressed="false"><i class="key planned"></i>Planned <span id="cPlanned" class="c">0</span></button>
-          </div>
-          <button class="btn primary" id="addTattoo">+ Add tattoo</button>
+
+        <div id="placeBanner" class="place-banner" hidden>
+          <span>Tap the body where it goes. Switch views first if you need to.</span>
+          <button class="btn small" id="cancelPlace">Cancel</button>
         </div>
-      </div>
 
-      <div id="placeBanner" class="place-banner" hidden>
-        <span>Tap the body where it goes. Switch views first if you need to.</span>
-        <button class="btn small" id="cancelPlace">Cancel</button>
+        <figure class="plate v-front">
+          <div class="plate-head">
+            <div><p class="eyebrow" id="viewFig">Fig. 1</p><h2 id="viewTitle">Front</h2></div>
+            <span class="count-pill" id="viewCount"></span>
+          </div>
+          <svg id="plate" role="img" aria-label="Body figure with tattoo placements" viewBox="0 0 960 880"></svg>
+        </figure>
       </div>
-
-      <figure class="plate">
-        <svg id="plate" role="img" aria-label="Body figure with tattoo placements" viewBox="0 0 1000 900"></svg>
-        <figcaption id="caption"></figcaption>
-      </figure>
 
       <section class="collection">
-        <div class="section-head"><h2>Collection</h2><span id="listCount" class="muted"></span></div>
-        <div id="list" class="list"></div>
+        <div class="section-head"><h2>Collection</h2><span id="listCount" class="eyebrow"></span></div>
+        <div class="pills small" id="filterSeg" role="group" aria-label="Show">
+          <button data-filter="all" aria-pressed="true">All <span id="cAll" class="c">0</span></button>
+          <button data-filter="have" aria-pressed="false"><i class="dot have"></i>Inked <span id="cHave" class="c">0</span></button>
+          <button data-filter="planned" aria-pressed="false"><i class="dot planned"></i>Planned <span id="cPlanned" class="c">0</span></button>
+        </div>
+        <div id="list" class="stack"></div>
       </section>
     </section>
 
     <section id="page-inspo" hidden>
       <div class="inspo-head">
-        <div><h2>Inspiration</h2><p class="muted">Ideas saved by where they’d go.</p></div>
-        <button id="addInspo" class="btn primary">+ Save inspiration</button>
+        <div><h2 class="big">Inspiration</h2><p class="eyebrow">Ideas saved by where they’d go</p></div>
+        <button id="addInspo" class="btn primary">+ Save idea</button>
       </div>
       <div class="chips" id="regionChips"></div>
       <div class="inspo-grid" id="inspoGrid"></div>
@@ -94,6 +96,12 @@
   </main>
 
   <footer class="foot"><button class="linkish" id="signOut">Sign out</button></footer>
+
+  <nav class="bottom-nav" aria-label="Pages">
+    <a href="#body" aria-current="true"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.6"/><path d="M12 8.5c-3 0-4.5 1.6-4.5 4.5l1.8.4.7 9.1h4l.7-9.1 1.8-.4c0-2.9-1.5-4.5-4.5-4.5z"/></svg><span>Body</span></a>
+    <button id="navAdd" class="nav-add" aria-label="Add">+</button>
+    <a href="#inspiration"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.6 6.1 6.4.5-4.9 4.2 1.5 6.4L12 16.3l-5.6 3.4 1.5-6.4L3 9.1l6.4-.5z"/></svg><span>Ideas</span></a>
+  </nav>
 </div>
 
 <div id="sheetWrap" class="sheet-wrap" hidden>

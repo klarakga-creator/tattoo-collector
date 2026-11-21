@@ -2,10 +2,10 @@
   'use strict';
   const F = window.Figure;
   const VIEWS = {
-    front: { label: 'Front', fig: 'Fig. 1', name: 'Anterior view', marks: ['R', 'L'] },
-    back: { label: 'Back', fig: 'Fig. 2', name: 'Posterior view', marks: ['L', 'R'] },
-    left: { label: 'Left side', fig: 'Fig. 3', name: 'Left lateral view', marks: ['A', 'P'] },
-    right: { label: 'Right side', fig: 'Fig. 4', name: 'Right lateral view', marks: ['P', 'A'] }
+    front: { label: 'Front', fig: 'Fig. 1', name: 'Anterior', marks: ['R', 'L'] },
+    back: { label: 'Back', fig: 'Fig. 2', name: 'Posterior', marks: ['L', 'R'] },
+    left: { label: 'Left side', fig: 'Fig. 3', name: 'Left lateral', marks: ['A', 'P'] },
+    right: { label: 'Right side', fig: 'Fig. 4', name: 'Right lateral', marks: ['P', 'A'] }
   };
   // Order matters: first match wins.
   const REGIONS = [
@@ -105,7 +105,12 @@
       $$('#filterSeg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
       renderPlate(); renderList();
     }));
-    $('#addTattoo').addEventListener('click', () => openTattooForm({ status: 'have', name: '', part: '', artist: '', date: '', notes: '' }));
+    const newTattoo = () => openTattooForm({ status: 'have', name: '', part: '', artist: '', date: '', notes: '' });
+    $('#addTattoo').addEventListener('click', newTattoo);
+    $('#navAdd').addEventListener('click', () => {
+      if (location.hash === '#inspiration') openInspoForm({ region: S.region === 'all' ? 'anywhere' : S.region, link: '', note: '' });
+      else newTattoo();
+    });
     $('#addInspo').addEventListener('click', () => openInspoForm({ region: S.region === 'all' ? 'anywhere' : S.region, link: '', note: '' }));
     $('#cancelPlace').addEventListener('click', () => { const d = S.placing.draft; stopPlacing(); openTattooForm(d); });
     $('#plate').addEventListener('click', onPlateClick);
@@ -124,7 +129,7 @@
   function route() {
     const insp = location.hash === '#inspiration';
     $('#page-body').hidden = insp; $('#page-inspo').hidden = !insp;
-    $$('.tabs a').forEach((a) => a.setAttribute('aria-current', String((a.getAttribute('href') === '#inspiration') === insp)));
+    $$('.tabs a, .bottom-nav a').forEach((a) => a.setAttribute('aria-current', String((a.getAttribute('href') === '#inspiration') === insp)));
     if (!insp) renderPlate();
   }
 
@@ -151,76 +156,81 @@
 
   function renderPlate() {
     const svg = $('#plate'); if (!svg) return;
-    const narrow = (svg.parentNode.clientWidth || 800) < 640;
-    const W = narrow ? 720 : 1000, H = 900, sc = narrow ? 0.92 : 1;
-    const fw = F.FIG_W * sc, figX = (W - fw) / 2, figY = (H - F.FIG_H * sc) / 2 + 4;
+    const narrow = (svg.parentNode.clientWidth || 800) < 600;
+    const W = narrow ? 720 : 960, H = 880, sc = narrow ? 0.9 : 0.98;
+    const fw = F.FIG_W * sc, figX = (W - fw) / 2, figY = (H - F.FIG_H * sc) / 2 - 4;
     S.geo = { W, H, sc, figX, figY, narrow };
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
 
-    const r = narrow ? 30 : 30;
+    const r = 32;
     const items = visible().filter((t) => t.view === S.view).map((t) => ({ t, px: figX + t.x * fw, py: figY + t.y * F.FIG_H * sc }));
     const L = items.filter((i) => i.t.x < 0.5), R = items.filter((i) => i.t.x >= 0.5);
-    [L, R].forEach((col) => col.forEach((i) => { i.target = narrow ? i.py - 22 : i.py; }));
-    if (narrow) { layoutColumn(L, r + 10, H - r - 62, 112); layoutColumn(R, r + 10, H - r - 62, 112); }
-    else { layoutColumn(L, 44, H - 50, 88); layoutColumn(R, 44, H - 50, 88); }
+    [L, R].forEach((col) => col.forEach((i) => { i.target = narrow ? i.py - 26 : i.py; }));
+    if (narrow) { layoutColumn(L, r + 12, H - r - 70, 118); layoutColumn(R, r + 12, H - r - 70, 118); }
+    else { layoutColumn(L, 50, H - 50, 92); layoutColumn(R, 50, H - 50, 92); }
 
     let lines = '', labels = '', pins = '';
     const place = (it, leftCol) => {
       const t = it.t, sel = S.selected === t.id, planned = t.status === 'planned';
-      let cx, cy = it.ly;
-      if (narrow) cx = leftCol ? figX / 2 + 4 : W - figX / 2 - 4;
-      else cx = leftCol ? figX - 74 : figX + fw + 74;
+      const cy = it.ly;
+      const cx = narrow ? (leftCol ? figX / 2 + 2 : W - figX / 2 - 2) : (leftCol ? figX - 64 : figX + fw + 64);
       const ang = Math.atan2(it.py - cy, it.px - cx);
-      const ex = cx + Math.cos(ang) * (r + 4), ey = cy + Math.sin(ang) * (r + 4);
-      const cls = 'lead ' + (planned ? 'planned' : 'have') + (sel ? ' sel' : '');
-      lines += '<line class="' + cls + '" x1="' + it.px.toFixed(1) + '" y1="' + it.py.toFixed(1) + '" x2="' + ex.toFixed(1) + '" y2="' + ey.toFixed(1) + '"/>';
-      pins += '<g class="pin ' + (planned ? 'planned' : 'have') + (sel ? ' sel' : '') + '" data-id="' + esc(t.id) + '"><circle class="hitarea" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="18"/><circle class="dot" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="' + (sel ? 9 : 7) + '"/></g>';
+      const ex = cx + Math.cos(ang) * (r + 5), ey = cy + Math.sin(ang) * (r + 5);
+      const cls = (planned ? 'planned' : 'have') + (sel ? ' sel' : '');
+      const seg = 'x1="' + it.px.toFixed(1) + '" y1="' + it.py.toFixed(1) + '" x2="' + ex.toFixed(1) + '" y2="' + ey.toFixed(1) + '"';
+      lines += '<line class="lead ' + cls + '" ' + seg + '/><line class="lead-in ' + cls + '" clip-path="url(#onBody)" ' + seg + '/>';
+      pins += '<g class="pin ' + cls + '" data-id="' + esc(t.id) + '"><circle class="hitarea" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="20"/>' +
+        '<circle class="dot" cx="' + it.px.toFixed(1) + '" cy="' + it.py.toFixed(1) + '" r="' + (sel ? 11 : 8.5) + '"/></g>';
       const u = img(t.image_path);
       const thumb = u
         ? '<image href="' + esc(u) + '" x="' + (cx - r) + '" y="' + (cy - r) + '" width="' + 2 * r + '" height="' + 2 * r + '" preserveAspectRatio="xMidYMid slice" clip-path="url(#circ)"/>'
-        : '<text class="initial" x="' + cx + '" y="' + (cy + 10) + '" text-anchor="middle">' + esc((t.name || '?').trim().charAt(0).toUpperCase()) + '</text>';
+        : '<text class="initial" x="' + cx + '" y="' + (cy + 11) + '" text-anchor="middle">' + esc((t.name || '?').trim().charAt(0).toUpperCase()) + '</text>';
       let text;
       if (narrow) {
-        text = '<text class="lb-name" x="' + cx + '" y="' + (cy + r + 30) + '" text-anchor="middle">' + esc(clip(t.name || 'Untitled', 14)) + '</text>' +
-          '<text class="lb-part" x="' + cx + '" y="' + (cy + r + 54) + '" text-anchor="middle">' + esc(clip(t.part, 18)) + '</text>';
+        text = '<text class="lb-name" x="' + cx + '" y="' + (cy + r + 32) + '" text-anchor="middle">' + esc(clip((t.name || 'Untitled').toUpperCase(), 16)) + '</text>' +
+          '<text class="lb-part" x="' + cx + '" y="' + (cy + r + 56) + '" text-anchor="middle">' + esc(clip(t.part, 17)) + '</text>';
       } else {
-        const tx = leftCol ? cx - r - 16 : cx + r + 16, anchor = leftCol ? 'end' : 'start';
-        text = '<text class="lb-name" x="' + tx + '" y="' + (cy + 1) + '" text-anchor="' + anchor + '">' + esc(clip(t.name || 'Untitled', 20)) + '</text>' +
-          '<text class="lb-part" x="' + tx + '" y="' + (cy + 25) + '" text-anchor="' + anchor + '">' + esc(clip(t.part, 26)) + '</text>';
+        const tx = leftCol ? cx - r - 14 : cx + r + 14, anchor = leftCol ? 'end' : 'start';
+        text = '<text class="lb-name" x="' + tx + '" y="' + (cy + 2) + '" text-anchor="' + anchor + '">' + esc(clip((t.name || 'Untitled').toUpperCase(), 18)) + '</text>' +
+          '<text class="lb-part" x="' + tx + '" y="' + (cy + 26) + '" text-anchor="' + anchor + '">' + esc(clip(t.part, 24)) + '</text>';
       }
-      labels += '<g class="label ' + (planned ? 'planned' : 'have') + (sel ? ' sel' : '') + '" data-id="' + esc(t.id) + '" tabindex="0" role="button" aria-label="' + esc((t.name || 'Untitled') + ', ' + (t.part || '')) + '">' +
-        '<rect class="hitarea" x="' + (narrow ? cx - 100 : (leftCol ? cx - 260 : cx - r - 6)) + '" y="' + (cy - r - 6) + '" width="' + (narrow ? 200 : 266) + '" height="' + (narrow ? 2 * r + 70 : 2 * r + 12) + '"/>' +
+      labels += '<g class="label ' + cls + '" data-id="' + esc(t.id) + '" tabindex="0" role="button" aria-label="' + esc((t.name || 'Untitled') + ', ' + (t.part || '')) + '">' +
+        '<rect class="hitarea" x="' + (narrow ? cx - 100 : (leftCol ? cx - 250 : cx - r - 6)) + '" y="' + (cy - r - 6) + '" width="' + (narrow ? 200 : 256) + '" height="' + (narrow ? 2 * r + 76 : 2 * r + 12) + '"/>' +
         '<circle class="thumb-bg" cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>' + thumb +
         '<circle class="thumb-ring" cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>' + text + '</g>';
     };
     L.forEach((i) => place(i, true)); R.forEach((i) => place(i, false));
 
-    // Ghost pin while placing
     let ghost = '';
     const d = S.placing && S.placing.draft;
     if (d && d.view === S.view && d.x != null) {
-      ghost = '<circle class="ghost" cx="' + (figX + d.x * fw).toFixed(1) + '" cy="' + (figY + d.y * F.FIG_H * sc).toFixed(1) + '" r="9"/>';
+      ghost = '<circle class="ghost" cx="' + (figX + d.x * fw).toFixed(1) + '" cy="' + (figY + d.y * F.FIG_H * sc).toFixed(1) + '" r="11"/>';
     }
 
-    const m = VIEWS[S.view].marks;
-    const marks = '<text class="orient" x="' + (figX - 8) + '" y="' + (figY + 40) + '" text-anchor="end">' + m[0] + '</text>' +
-      '<text class="orient" x="' + (figX + fw + 8) + '" y="' + (figY + 40) + '">' + m[1] + '</text>';
+    const figT = 'translate(' + figX.toFixed(1) + ' ' + figY.toFixed(1) + ') scale(' + sc + ')' + (S.view === 'left' ? ' translate(' + F.FIG_W + ' 0) scale(-1 1)' : '');
+    const clipBody = F.clipPaths(S.view).map((p) => '<path transform="' + figT + '" d="' + p + '"/>').join('');
 
+    const m = VIEWS[S.view].marks;
+    const marks = '<text class="orient" x="' + (figX - 4) + '" y="' + (figY + 70) + '" text-anchor="end">' + m[0] + '</text>' +
+      '<text class="orient" x="' + (figX + fw + 4) + '" y="' + (figY + 70) + '">' + m[1] + '</text>';
     const empty = !items.length && S.loaded
-      ? '<text class="empty-note" x="' + W / 2 + '" y="' + (H - 14) + '" text-anchor="middle">' +
-        (S.tattoos.length ? 'Nothing on this view yet' : 'Tap “Add tattoo” to place your first one') + '</text>'
+      ? '<text class="empty-note" x="' + W / 2 + '" y="' + (H - 12) + '" text-anchor="middle">' +
+        (S.tattoos.length ? 'NOTHING ON THIS SIDE YET' : 'TAP + TO ADD YOUR FIRST TATTOO') + '</text>'
       : '';
 
     svg.innerHTML =
-      '<defs><clipPath id="circ" clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5"/></clipPath></defs>' +
+      '<defs><clipPath id="circ" clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5"/></clipPath>' +
+      '<clipPath id="onBody">' + clipBody + '</clipPath></defs>' +
       '<g class="fig" transform="translate(' + figX.toFixed(1) + ' ' + figY.toFixed(1) + ') scale(' + sc + ')">' + F.markup(S.view) + '</g>' +
       marks + lines + pins + labels + ghost + empty;
 
     const v = VIEWS[S.view];
     const here = items.length, planned = items.filter((i) => i.t.status === 'planned').length;
-    $('#caption').innerHTML = '<span class="fig-no">' + v.fig + '</span><span class="fig-name">' + v.name + '</span>' +
-      '<span class="fig-count">' + (S.loaded ? here + (here === 1 ? ' piece' : ' pieces') + (planned ? ' · ' + planned + ' planned' : '') : 'Loading…') + '</span>';
-    $('.plate').classList.toggle('placing', !!S.placing);
+    const plate = $('.plate');
+    plate.className = 'plate v-' + S.view + (S.placing ? ' placing' : '');
+    $('#viewFig').textContent = v.fig + ' · ' + v.name;
+    $('#viewTitle').textContent = v.label;
+    $('#viewCount').textContent = S.loaded ? here + (here === 1 ? ' piece' : ' pieces') + (planned ? ' · ' + planned + ' planned' : '') : 'Loading…';
   }
 
   function svgPoint(e) {
@@ -277,20 +287,25 @@
     const list = visible().slice().sort((a, b) => (a.status === 'planned') - (b.status === 'planned'));
     $('#listCount').textContent = list.length ? list.length + (list.length === 1 ? ' piece' : ' pieces') : '';
     if (!list.length) {
-      $('#list').innerHTML = '<p class="muted">' + (S.loaded ? (S.tattoos.length ? 'Nothing matches this filter.' : 'Your collection is empty. Add your first tattoo and it will show up here and on the body.') : 'Loading your collection…') + '</p>';
+      $('#list').innerHTML = '<p class="empty-card">' + (S.loaded ? (S.tattoos.length ? 'Nothing matches this filter.' : 'Your collection is empty. Tap + to add your first tattoo and it shows up here and on the body.') : 'Loading your collection…') + '</p>';
       return;
     }
-    $('#list').innerHTML = list.map((t) => {
-      const u = img(t.image_path);
-      return '<button class="card" data-open="' + esc(t.id) + '">' +
+    const tones = ['coral', 'ink', 'mustard', 'violet', 'mint'];
+    $('#list').innerHTML = list.map((t, k) => {
+      const u = img(t.image_path), planned = t.status === 'planned';
+      return '<button class="card tone-' + tones[k % tones.length] + '" data-open="' + esc(t.id) + '">' +
+        '<span class="card-top">' +
         (u ? '<img src="' + esc(u) + '" alt="" loading="lazy">' : '<span class="noimg">' + esc((t.name || '?').charAt(0).toUpperCase()) + '</span>') +
-        '<span class="card-body"><span class="card-name">' + esc(t.name || 'Untitled') + '</span>' +
-        '<span class="card-part">' + esc(t.part || '') + '</span>' +
-        '<span class="pill ' + (t.status === 'planned' ? 'planned' : 'have') + '">' + (t.status === 'planned' ? 'Planned' : 'Inked') + '</span></span></button>';
+        '<span class="card-name">' + esc(t.name || 'Untitled') + '</span>' +
+        '<span class="arrow" aria-hidden="true">↗</span></span>' +
+        '<span class="card-tags"><span class="tag-pill"><i class="dot ' + (planned ? 'planned' : 'have') + '"></i>' + (planned ? 'Planned' : 'Inked') + '</span>' +
+        (t.part ? '<span class="tag-pill">' + esc(t.part) + '</span>' : '') +
+        '<span class="tag-pill">' + VIEWS[t.view].label + '</span></span></button>';
     }).join('');
     $$('#list [data-open]').forEach((b) => b.addEventListener('click', () => {
       const t = S.tattoos.find((x) => x.id === b.dataset.open);
-      setView(t.view); $('.plate').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setView(t.view);
+      if (window.innerWidth < 900) $('.plate').scrollIntoView({ behavior: 'smooth', block: 'start' });
       openDetail(t.id);
     }));
   }
@@ -315,11 +330,11 @@
     const u = img(t.image_path), reg = regionOf(t.part), ideas = S.inspo.filter((i) => i.region === reg).length;
     const facts = [['Artist / studio', t.artist], [t.status === 'planned' ? 'Target date' : 'Date', fmtDate(t.date)], ['Notes', t.notes]].filter((f) => f[1]);
     openSheet(
-      '<div class="sheet-head"><span class="pill ' + (t.status === 'planned' ? 'planned' : 'have') + '">' + (t.status === 'planned' ? 'Planned' : 'Inked') + '</span>' +
+      '<div class="sheet-head"><span class="tag-pill"><i class="dot ' + (t.status === 'planned' ? 'planned' : 'have') + '"></i>' + (t.status === 'planned' ? 'Planned' : 'Inked') + '</span>' +
       '<button class="icon-btn" data-close aria-label="Close">✕</button></div>' +
       (u ? '<button class="detail-img" id="dImg" aria-label="Show full photo"><img src="' + esc(u) + '" alt="' + esc(t.name) + '"></button>' : '<div class="detail-noimg">No photo yet. Edit to add one.</div>') +
       '<h3 class="detail-name">' + esc(t.name || 'Untitled') + '</h3>' +
-      '<p class="detail-part">' + esc(t.part || 'No body part set') + ' · ' + VIEWS[t.view].label + ' view</p>' +
+      '<div class="card-tags"><span class="tag-pill">' + esc(t.part || 'No body part set') + '</span><span class="tag-pill">' + VIEWS[t.view].label + ' view</span></div>' +
       (facts.length ? '<dl class="facts">' + facts.map((f) => '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + '</dd></div>').join('') + '</dl>' : '') +
       '<button class="link-btn" id="dIdeas">' + (ideas ? ideas + ' inspiration ' + (ideas === 1 ? 'idea' : 'ideas') : 'Inspiration') + ' for ' + regionLabel(reg).toLowerCase() + ' →</button>' +
       '<div class="form-actions"><button class="btn danger" id="dDel">Delete</button><span class="grow"></span><button class="btn primary" id="dEdit">Edit</button></div>'
