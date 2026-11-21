@@ -1,9 +1,7 @@
-// Connection to your Supabase project.
-// Both values come from Supabase: Project Settings → API (or "Connect").
-// The key below is the public "anon" / "publishable" key. It is safe to publish:
-// your data is protected by the row-level security rules in supabase/schema.sql.
-// While these still say YOUR_..., the app runs in preview mode with example data.
+// Connection to your Supabase project (Project Settings → API / "Connect").
+// This is the public publishable key: it is safe to publish. Your data is
+// protected by the row-level security rules in supabase/schema.sql.
 window.TC_CONFIG = {
-  url: 'YOUR_SUPABASE_URL',
-  key: 'YOUR_SUPABASE_PUBLISHABLE_KEY'
+  url: 'https://muokjlfurmiafjrvgcsh.supabase.co',
+  key: 'sb_publishable_D38ldRGbpauBlJBYdHmTWQ_5IVgs2_s'
 };
