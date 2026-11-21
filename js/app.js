@@ -208,6 +208,7 @@
       if (z === 'fit') setZoom(1); else setZoom(S.zoom.s * (z === 'in' ? 1.6 : 1 / 1.6), ghostPoint());
     }));
     wirePlateGestures();
+    wireViewSwipe();
     $('#plate').addEventListener('click', onPlateClick);
     $('#signOut').addEventListener('click', async () => { try { localStorage.removeItem(CACHE_KEY); } catch (e) { /* ignore */ } await S.store.signOut(); location.reload(); });
     $('#sheetWrap').addEventListener('click', (e) => { if (e.target.matches('.scrim') || e.target.closest('[data-close]')) closeSheet(); });
@@ -242,10 +243,76 @@
     if (!insp) renderPlate();
   }
 
-  function setView(v) {
+  const VIEW_ORDER = ['front', 'back', 'left', 'right'];
+  const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let viewAnim = null;
+  // dir: 1 = new view comes in from the right, -1 = from the left. from: how far the figure was already dragged.
+  function setView(v, dir) {
+    const prev = S.view;
     S.view = v;
     $$('#viewSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
+    const svg = $('#plate');
+    if (prev === v || S.placing || reduceMotion || !svg || !svg.animate) {
+      if (svg) svg.style.transform = '';
+      renderPlate(); return;
+    }
+    if (dir == null) dir = VIEW_ORDER.indexOf(v) > VIEW_ORDER.indexOf(prev) ? 1 : -1;
+    if (viewAnim) viewAnim.cancel();
+    const w = Math.min(120, svg.clientWidth * 0.22);
+    svg.style.transform = '';
     renderPlate();
+    // The new view slides in from the side you swiped towards.
+    viewAnim = svg.animate([{ transform: 'translateX(' + (dir * w) + 'px)', opacity: 0 }, { transform: 'translateX(0)', opacity: 1 }],
+      { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    viewAnim.onfinish = () => { viewAnim = null; };
+  }
+  // Swipe left or right on the body (or two-finger swipe on a Mac trackpad) to change view.
+  function wireViewSwipe() {
+    const plate = $('.plate'), svg = $('#plate');
+    const step = (d) => VIEW_ORDER[(VIEW_ORDER.indexOf(S.view) + d + VIEW_ORDER.length) % VIEW_ORDER.length];
+    let x0 = 0, y0 = 0, t0 = 0, dx = 0, mode = null;
+    plate.addEventListener('touchstart', (e) => {
+      if (S.placing || e.touches.length !== 1 || e.target.closest('.zoom-ctl')) { mode = 'skip'; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); dx = 0; mode = null;
+    }, { passive: true });
+    plate.addEventListener('touchmove', (e) => {
+      if (mode === 'skip' || S.placing || e.touches.length !== 1) return;
+      const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+      if (mode === null) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        mode = Math.abs(mx) > Math.abs(my) * 1.2 ? 'swipe' : 'skip';
+        if (mode === 'skip') return;
+        if (viewAnim) { viewAnim.cancel(); viewAnim = null; }
+      }
+      e.preventDefault();
+      dx = mx;
+      svg.style.transform = 'translateX(' + dx * 0.6 + 'px)';
+      svg.style.opacity = String(1 - Math.min(0.5, Math.abs(dx) / 600));
+    }, { passive: false });
+    const end = () => {
+      if (mode !== 'swipe') { mode = null; return; }
+      mode = null; svg.style.opacity = '';
+      setTimeout(() => { dx = 0; }, 400);
+      const fast = Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.4;
+      if (Math.abs(dx) > 60 || (fast && Math.abs(dx) > 25)) {
+        const d = dx < 0 ? 1 : -1;
+        svg.style.transform = ''; setView(step(d), d);
+      } else if (svg.animate) {
+        const a = svg.animate([{ transform: svg.style.transform }, { transform: 'translateX(0)' }], { duration: 180, easing: 'ease-out' });
+        svg.style.transform = ''; a.onfinish = () => {};
+      } else svg.style.transform = '';
+    };
+    plate.addEventListener('touchend', end); plate.addEventListener('touchcancel', end);
+    // A swipe on the body shouldn't also count as a tap on a tattoo.
+    plate.addEventListener('click', (e) => { if (Math.abs(dx) > 8) { e.stopPropagation(); e.preventDefault(); dx = 0; } }, true);
+    let wheelLock = 0, acc = 0;
+    plate.addEventListener('wheel', (e) => {
+      if (S.placing || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      if (Date.now() < wheelLock) return;
+      acc += e.deltaX;
+      if (Math.abs(acc) > 60) { const d = acc > 0 ? 1 : -1; acc = 0; wheelLock = Date.now() + 450; setView(step(d), d); }
+    }, { passive: false });
   }
 
   // ---------- plate ----------

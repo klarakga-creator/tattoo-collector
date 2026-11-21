@@ -345,3 +345,6 @@ img.ph.in { opacity: 1; }
 .label.planned .lb-dot { fill: var(--pbg, transparent); stroke-dasharray: 5 4; }
 .label.sel .lb-dot { stroke: var(--cream); stroke-width: 4; }
 .label:focus-visible .lb-dot { stroke: var(--cream); stroke-width: 5; }
+/* Smooth view changes: colour fades while the figure slides. */
+.plate { transition: background-color .3s ease; }
+.plate:not(.placing) #plate { touch-action: pan-y; will-change: transform; }
