@@ -401,3 +401,6 @@ img.ph.in { opacity: 1; }
 .ghost-other { fill: var(--cream); stroke: var(--black); stroke-width: 3; opacity: .9; }
 .place-btns { flex-wrap: wrap; justify-content: flex-end; }
 .place-banner .btn.ghost#addSpot { border: 2px solid var(--black); }
+
+/* Ideas grid slides between categories. */
+#inspoGrid { touch-action: pan-y; will-change: transform; }

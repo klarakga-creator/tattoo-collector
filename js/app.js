@@ -223,6 +223,7 @@
     }));
     wirePlateGestures();
     wireViewSwipe();
+    wireRegionSwipe();
     $('#plate').addEventListener('click', onPlateClick);
     $('#plate').addEventListener('click', (e) => {
       if (S.placing || !S.selected || !$('#sheetWrap').hidden || e.target.closest('.label, .pin, .zoom-ctl')) return;
@@ -904,11 +905,76 @@
   }
 
   // ---------- inspiration ----------
+  // Ideas categories slide left or right, like the body views.
+  const REGION_ORDER = ['all'].concat(REGIONS.map((r) => r[0]));
+  let regionAnim = null;
+  function setRegion(k, dir) {
+    const prev = S.region; if (k === prev) return;
+    S.region = k;
+    if (dir == null) dir = REGION_ORDER.indexOf(k) > REGION_ORDER.indexOf(prev) ? 1 : -1;
+    const grid = $('#inspoGrid');
+    grid.style.transform = ''; grid.style.opacity = '';
+    renderInspo();
+    const chip = $('#regionChips [aria-pressed="true"]');
+    if (chip && chip.scrollIntoView) chip.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
+    if (reduceMotion || !grid.animate) return;
+    if (regionAnim) regionAnim.cancel();
+    const w = Math.min(120, grid.clientWidth * 0.22);
+    regionAnim = grid.animate([{ transform: 'translateX(' + (dir * w) + 'px)', opacity: 0 }, { transform: 'translateX(0)', opacity: 1 }],
+      { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    regionAnim.onfinish = () => { regionAnim = null; };
+  }
+  function wireRegionSwipe() {
+    const page = $('#page-inspo'), grid = $('#inspoGrid');
+    const step = (d) => REGION_ORDER[Math.min(REGION_ORDER.length - 1, Math.max(0, REGION_ORDER.indexOf(S.region) + d))];
+    let x0 = 0, y0 = 0, t0 = 0, dx = 0, mode = null;
+    page.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1 || e.target.closest('#regionChips, .sheet-wrap')) { mode = 'skip'; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); dx = 0; mode = null;
+    }, { passive: true });
+    page.addEventListener('touchmove', (e) => {
+      if (mode === 'skip' || e.touches.length !== 1) return;
+      const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+      if (mode === null) {
+        if (Math.abs(mx) < 8 && Math.abs(my) < 8) return;
+        mode = Math.abs(mx) > Math.abs(my) * 1.2 ? 'swipe' : 'skip';
+        if (mode === 'skip') return;
+        if (regionAnim) { regionAnim.cancel(); regionAnim = null; }
+      }
+      e.preventDefault();
+      dx = mx;
+      // At the first or last category, give a little resistance instead of moving freely.
+      const d = dx < 0 ? 1 : -1, edge = step(d) === S.region;
+      grid.style.transform = 'translateX(' + dx * (edge ? 0.2 : 0.6) + 'px)';
+      grid.style.opacity = String(1 - Math.min(0.5, Math.abs(dx) / 600));
+    }, { passive: false });
+    const end = () => {
+      if (mode !== 'swipe') { mode = null; return; }
+      mode = null; grid.style.opacity = '';
+      setTimeout(() => { dx = 0; }, 400);
+      const d = dx < 0 ? 1 : -1, next = step(d);
+      const fast = Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.4;
+      if (next !== S.region && (Math.abs(dx) > 60 || (fast && Math.abs(dx) > 25))) { grid.style.transform = ''; setRegion(next, d); }
+      else if (grid.animate) { const a = grid.animate([{ transform: grid.style.transform }, { transform: 'translateX(0)' }], { duration: 180, easing: 'ease-out' }); grid.style.transform = ''; a.onfinish = () => {}; }
+      else grid.style.transform = '';
+    };
+    page.addEventListener('touchend', end); page.addEventListener('touchcancel', end);
+    page.addEventListener('click', (e) => { if (Math.abs(dx) > 8) { e.stopPropagation(); e.preventDefault(); dx = 0; } }, true);
+    let lock = 0, acc = 0;
+    grid.addEventListener('wheel', (e) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      if (Date.now() < lock) return;
+      acc += e.deltaX;
+      if (Math.abs(acc) > 60) { const d = acc > 0 ? 1 : -1; acc = 0; lock = Date.now() + 450; const n = step(d); if (n !== S.region) setRegion(n, d); }
+    }, { passive: false });
+  }
+
   function renderInspo() {
     const counts = {}; S.inspo.forEach((i) => { counts[i.region] = (counts[i.region] || 0) + 1; });
     const chip = (k, label, n) => '<button class="chip" data-region="' + k + '" aria-pressed="' + (S.region === k) + '">' + esc(label) + (n ? '<span class="n">' + n + '</span>' : '') + '</button>';
     $('#regionChips').innerHTML = chip('all', 'All', S.inspo.length) + REGIONS.map((r) => chip(r[0], r[1], counts[r[0]] || 0)).join('');
-    $$('#regionChips .chip').forEach((b) => b.addEventListener('click', () => { S.region = b.dataset.region; renderInspo(); }));
+    $$('#regionChips .chip').forEach((b) => b.addEventListener('click', () => setRegion(b.dataset.region)));
     const items = S.inspo.filter((i) => S.region === 'all' || i.region === S.region).slice().reverse();
     if (!items.length) {
       $('#inspoGrid').innerHTML = '<div class="inspo-empty"><p>' + (S.loaded ? 'No inspiration saved' + (S.region === 'all' ? ' yet' : ' for ' + regionLabel(S.region).toLowerCase() + ' yet') + '.' : 'Loading…') + '</p><p class="muted">Save screenshots, flash sheets or artist links, sorted by where on your body you picture them.</p></div>';
