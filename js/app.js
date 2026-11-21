@@ -231,8 +231,12 @@
     let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderPlate, 120); });
   }
 
+  let wasInsp = null;
   function route() {
     const insp = location.hash === '#inspiration';
+    // Opening Ideas always starts on All, unless a tattoo's "inspiration for…" link sent you to one area.
+    if (insp && wasInsp === false && !S.keepRegion && S.region !== 'all') { S.region = 'all'; renderInspo(); }
+    S.keepRegion = false; wasInsp = insp;
     $('#page-body').hidden = insp; $('#page-inspo').hidden = !insp;
     $$('.tabs a, .bottom-nav a').forEach((a) => a.setAttribute('aria-current', String((a.getAttribute('href') === '#inspiration') === insp)));
     if (!insp) renderPlate();
@@ -576,7 +580,7 @@
       '<div class="form-actions"><button class="btn danger" id="dDel">Delete</button><span class="grow"></span><button class="btn" id="dMove">Move pin</button><button class="btn primary" id="dEdit">Edit</button></div>'
     );
     if (u) { markLoaded($('#dImg')); progressive($('#dImg img'), sm, u); $('#dImg').addEventListener('click', () => lightbox(u, $('#dImg img').src)); }
-    $('#dIdeas').addEventListener('click', () => { closeSheet(); S.region = reg; location.hash = '#inspiration'; renderInspo(); });
+    $('#dIdeas').addEventListener('click', () => { closeSheet(); S.region = reg; S.keepRegion = true; location.hash = '#inspiration'; renderInspo(); });
     $('#dEdit').addEventListener('click', () => openTattooForm(Object.assign({}, t)));
     $('#dMove').addEventListener('click', () => startPlacing(Object.assign({}, t), true));
     confirmButton($('#dDel'), 'Tap again to delete', async () => {
@@ -849,7 +853,6 @@
         } else {
           await S.store.save('inspirations', Object.assign({ image_path: null }, base));
         }
-        S.region = base.region;
         closeSheet(); await refresh(); toast('Saved');
       } catch (ex) {
         console.warn(ex);
