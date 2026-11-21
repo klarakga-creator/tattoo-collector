@@ -22,6 +22,18 @@
     ['anywhere', 'Anywhere', /.^/]
   ];
   const regionOf = (part) => (REGIONS.find((r) => r[2].test(part || '')) || REGIONS[REGIONS.length - 1])[0];
+  // Body zones, head to toe, each with its own colour (used to colour and order the collection).
+  const ZONES = [
+    { k: 'upper', label: 'Head & shoulders', tone: 'mustard', regions: ['head', 'shoulders'] },
+    { k: 'arms', label: 'Arms & hands', tone: 'coral', regions: ['arms', 'hands'] },
+    { k: 'front', label: 'Chest, ribs & stomach', tone: 'violet', regions: ['chest', 'ribs', 'stomach'] },
+    { k: 'back', label: 'Back', tone: 'mint', regions: ['back'] },
+    { k: 'legs', label: 'Legs & feet', tone: 'cream', regions: ['legs', 'feet'] },
+    { k: 'other', label: 'Anywhere else', tone: 'ink', regions: ['anywhere'] }
+  ];
+  const zoneOf = (part) => { const r = regionOf(part); return ZONES.find((z) => z.regions.includes(r)) || ZONES[ZONES.length - 1]; };
+  // Card colours: 'zone' (by body area, grouped head to toe) or 'mixed' (rotating colours).
+  const CARD_STYLE = (() => { const q = new URLSearchParams(location.search).get('cards'); if (q) return q; try { return localStorage.getItem('tc-cards') || 'mixed'; } catch (e) { return 'mixed'; } })();
   const regionLabel = (k) => (REGIONS.find((r) => r[0] === k) || REGIONS[REGIONS.length - 1])[1];
 
   const S = {
@@ -585,7 +597,11 @@
 
   function renderList() {
     renderCounts();
-    const list = visible().slice().sort((a, b) => (a.status === 'planned') - (b.status === 'planned'));
+    const byZone = CARD_STYLE === 'zone';
+    const rank = (t) => { const z = zoneOf(t.part); return ZONES.indexOf(z) * 100 + z.regions.indexOf(regionOf(t.part)); };
+    const list = visible().slice().sort((a, b) => byZone
+      ? (rank(a) - rank(b)) || (a.y - b.y) || (a.status === 'planned') - (b.status === 'planned')
+      : (a.status === 'planned') - (b.status === 'planned'));
     $('#listCount').textContent = list.length ? list.length + (list.length === 1 ? ' piece' : ' pieces') : '';
     if (!list.length) {
       $('#list').innerHTML = '<p class="empty-card">' + (S.loaded ? (S.tattoos.length ? 'Nothing matches this filter.' : 'Your collection is empty. Tap + to add your first tattoo and it shows up here and on the body.') : 'Loading your collection…') + '</p>';
@@ -597,19 +613,21 @@
       const u = thumb(t.image_path), planned = t.status === 'planned', open = S.openCard === t.id;
       const facts = [['Artist', t.artist], ['Studio', t.studio], [planned ? 'Target date' : 'Date', fmtDate(t.date)],
         ['Price', planned ? '' : t.price], ['Pain', !planned && t.pain ? t.pain + ' / 10' : '']].filter((f) => f[1]);
-      return '<article class="card tone-' + tones[k % tones.length] + (open ? ' open' : '') + '" data-card="' + esc(t.id) + '">' +
+      const z = zoneOf(t.part), first = byZone && (k === 0 || zoneOf(list[k - 1].part) !== z);
+      return (first ? '<h3 class="zone-head tone-' + z.tone + '"><i></i>' + esc(z.label) + '</h3>' : '') +
+        '<article class="card tone-' + (byZone ? z.tone : tones[k % tones.length]) + (open ? ' open' : '') + (first ? ' zone-first' : '') + '" data-card="' + esc(t.id) + '">' +
         '<div class="card-top" data-toggle>' +
         (u ? '<img src="' + esc(u) + '" alt="" decoding="async" class="ph" data-p="' + esc(t.image_path) + '">' : '<span class="noimg">' + esc((t.name || '?').charAt(0).toUpperCase()) + '</span>') +
         '<span class="card-name">' + esc(t.name || 'Untitled') + '</span>' +
         '<button class="arrow" type="button" aria-expanded="' + open + '" aria-label="' + (open ? 'Hide' : 'Show') + ' details for ' + esc(t.name || 'Untitled') + '">↗</button></div>' +
-        '<div class="card-more"><div class="card-more-in">' +
+        '<div class="card-more"><div class="card-more-in"><div class="card-more-pad">' +
         '<span class="card-tags"><span class="tag-pill"><i class="dot ' + (planned ? 'planned' : 'have') + '"></i>' + (planned ? 'Planned' : 'Inked') + '</span>' +
         (t.part ? '<span class="tag-pill">' + esc(t.part) + '</span>' : '') +
         '<span class="tag-pill">' + VIEWS[t.view].label + '</span></span>' +
         (facts.length ? '<dl class="card-facts">' + facts.map((f) => '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + '</dd></div>').join('') + '</dl>' : '') +
         '<div class="card-btns"><button type="button" class="btn small" data-show="' + esc(t.id) + '">Show on body</button>' +
         '<button type="button" class="btn small solid" data-open="' + esc(t.id) + '">Open details</button></div>' +
-        '</div></div></article>';
+        '</div></div></div></article>';
     }).join('');
     markLoaded($('#list'));
     // Tap a card (or its arrow) to slide it open; the cards below move down to make room.
